@@ -496,6 +496,39 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('proceeds after MAX_STUCK_POLLS consecutive poll timeouts when navigator.onLine is stuck false', async () => {
+    // Regression for #70. VPNs and some adapters can leave navigator.onLine
+    // permanently false even while packets flow normally. Before this fix,
+    // ensureOnline looped forever — every poll wakeup just re-read the same
+    // stuck flag. After MAX_STUCK_POLLS (3) consecutive poll-only wakeups with
+    // onLine still false, it now bails out and lets one attempt through.
+    // Here the mock succeeds, so the run completes — proving the bail-out
+    // unblocks the upload rather than hanging it forever.
+    vi.useFakeTimers();
+    const fakeWindow = new EventTarget();
+    vi.stubGlobal('window', fakeWindow);
+    vi.stubGlobal('navigator', { onLine: false }); // stuck false, never changes
+    try {
+      const session = makeSession(['pending']);
+      mocks.client = makeClient(session.files);
+      let last: UploadSnapshot | null = null;
+      const run = resumeUpload(
+        { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(1) },
+        (snap) => { last = snap; },
+      );
+      // Advance fake time through 3 × ONLINE_POLL_MS (90 s) plus the
+      // drivePool supervisor ticks in between. After the third poll timeout
+      // ensureOnline breaks out and the upload attempt fires; the mock
+      // succeeds, so the run completes with phase "done".
+      await vi.runAllTimersAsync();
+      const snap = await collect(run, () => last);
+      expect(snap.phase).toBe('done');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('publishes metadata after a clean sweep', async () => {
     const session = makeSession(Array.from({ length: 2 }, () => 'pending'));
     mocks.client = makeClient(session.files);
