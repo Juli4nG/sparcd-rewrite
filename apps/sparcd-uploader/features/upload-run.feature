@@ -172,7 +172,7 @@ Feature: Upload and publish a batch
 
   @unmapped
   Scenario: A lane stuck offline after a systemic abort surfaces the error without waiting for the network
-    Given a run trips the systemic abort threshold while some lanes are waiting for the network
+    Given a run aborts systemically while some lanes are waiting for the network
     Then the error screen is shown immediately
     And the run does not wait for the network to return before reporting the failure
 

@@ -195,11 +195,13 @@ function waitForOnline(signal: AbortSignal): Promise<void> {
   // as online rather than waiting on a `window.addEventListener` that would
   // throw there.
   if (typeof window === 'undefined' || navigator.onLine !== false) return Promise.resolve();
+  if (signal.aborted) return Promise.reject(new Error('cancelled'));
   return new Promise((resolve, reject) => {
+    let poll: ReturnType<typeof setInterval> | null = null;
     const cleanup = () => {
       window.removeEventListener('online', onDone);
       window.removeEventListener('focus', onDone);
-      clearInterval(poll);
+      if (poll !== null) clearInterval(poll);
       signal.removeEventListener('abort', onAbort);
     };
     // Resolving here doesn't assert the network is actually back — the
@@ -215,13 +217,12 @@ function waitForOnline(signal: AbortSignal): Promise<void> {
       cleanup();
       reject(new Error('cancelled'));
     };
-    // Guard against a signal that already fired before the listeners were
-    // attached — the 'abort' event would never fire in that case.
-    if (signal.aborted) { onAbort(); return; }
     window.addEventListener('online', onDone);
     window.addEventListener('focus', onDone);
-    const poll = setInterval(onDone, ONLINE_POLL_MS);
+    poll = setInterval(onDone, ONLINE_POLL_MS);
     signal.addEventListener('abort', onAbort);
+    // Close the race between the preflight check and listener registration.
+    if (signal.aborted) onAbort();
   });
 }
 

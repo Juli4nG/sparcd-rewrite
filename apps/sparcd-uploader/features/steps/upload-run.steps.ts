@@ -634,6 +634,54 @@ Then(
   },
 );
 
+Given(
+  'a run aborts systemically while some lanes are waiting for the network',
+  async ({ app }) => {
+    await rescanFromUpload(app, manyJpegs(4));
+    await app.pinConcurrency(4);
+    await app.page.evaluate(() => {
+      Math.random = () => 1;
+    });
+
+    let markOffline!: () => void;
+    const offline = new Promise<void>((resolve) => { markOffline = resolve; });
+    app.s3.putHooks.push(async (_bucket, key) => {
+      if (key.endsWith('IMG_0000.JPG')) {
+        await app.page.evaluate(() => {
+          Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+        });
+        markOffline();
+        return { status: 503, code: 'ServiceUnavailable', message: 'try later' };
+      }
+      if (key.endsWith('IMG_0001.JPG')) {
+        await offline;
+        // Let the sibling enter retry backoff before this fatal response makes
+        // the supervisor abort every lane.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return { status: 403, code: 'AccessDenied', message: 'Access Denied' };
+      }
+      return undefined;
+    });
+
+    app.notes.systemicAbortStartedAt = Date.now();
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+  },
+);
+
+Then('the error screen is shown immediately', async ({ app }) => {
+  await app.waitForRunPhase('error', 10_000);
+  await expect(app.page.getByText(/Access Denied|AccessDenied|Forbidden|403/).first()).toBeVisible();
+});
+
+Then(
+  'the run does not wait for the network to return before reporting the failure',
+  async ({ app }) => {
+    expect(Date.now() - (app.notes.systemicAbortStartedAt as number)).toBeLessThan(10_000);
+    expect(await app.page.evaluate(() => navigator.onLine)).toBe(false);
+  },
+);
+
 // --- never overwrite -------------------------------------------------------
 
 Given('an object already exists at a path the run intends to write', async ({ app }) => {
