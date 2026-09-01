@@ -388,6 +388,15 @@ export class App {
     await this.page.addInitScript(() => {
       // @ts-expect-error removing an optional capability
       delete window.showDirectoryPicker;
+      // Suppress file-input .click() so no native picker opens and no `cancel`
+      // event fires. This matches the observable behaviour on Safari ≤16 /
+      // Firefox ≤90: the fallback input.click() completes with no dialog and
+      // no cancel, leaving pickerOpen=true until the window `focus` fires.
+      const origInputClick = HTMLInputElement.prototype.click;
+      HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+        if (this.type === 'file') return;
+        origInputClick.call(this);
+      };
       const real = window.matchMedia.bind(window);
       window.matchMedia = (q: string) =>
         q.includes('pointer: coarse')
