@@ -560,3 +560,22 @@ Then('repeated clicks never start two runs at once', async ({ app }) => {
   await expect(app.runPhase()).toHaveText('partial');
   await expect(app.page.getByText(/Couldn't resume this upload/)).toHaveCount(1);
 });
+
+// --- picker cancel fallback (issue #68) ------------------------------------
+
+When('the folder picker is opened and dismissed without selecting a folder', async ({ app }) => {
+  await app.gotoSection('History');
+  // Click Resume — takes the <input webkitdirectory> fallback path because
+  // showDirectoryPicker was removed by the preceding step.
+  await app.page.getByRole('button', { name: 'Resume' }).first().click();
+  // Wait until pickerOpen is reflected in the DOM (all Resume buttons disabled)
+  // before dispatching focus, so the window focus listener is attached.
+  await expect(app.page.getByRole('button', { name: 'Resume' }).first()).toBeDisabled({ timeout: 5_000 });
+  // Simulate the window regaining focus after the OS picker closes without a
+  // selection — the fix path for browsers that don't fire the `cancel` event.
+  await app.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+});
+
+Then('the Resume button becomes available again', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Resume' }).first()).toBeEnabled();
+});
