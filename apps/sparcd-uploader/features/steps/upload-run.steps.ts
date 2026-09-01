@@ -1,7 +1,7 @@
 import { Given, When, Then, expect } from './fixtures';
 import type { App } from './app';
 import { FOLDER, manyJpegs, publishableBatch, sameNameSubfolderBatch, slowPublishableBatch, standardBatch } from './batches';
-import { rescanFromUpload, writtenCsvRows } from './helpers';
+import { FAILING_FILE, rescanFromUpload, writtenCsvRows } from './helpers';
 import { BUCKET_A, COLLECTION_A_NAME, UUID_A } from './fixtures-data';
 
 const UPLOADS_PREFIX = `Collections/${UUID_A}/Uploads/`;
@@ -589,6 +589,90 @@ Then('it is retried up to five attempts with an increasing, randomized delay', a
 Then('the retry is recorded in the activity log', async ({ app }) => {
   expect(await app.logText()).toContain('retry');
   expect(await app.logText()).toMatch(/failed [^\s]*IMG_0002\.JPG/);
+});
+
+Given(
+  'a resumed run is verifying files already stored in a previous session',
+  async ({ app }) => {
+    app.s3.putDelayMs = 150;
+    app.s3.putHooks.push((_bucket, key) =>
+      key.endsWith(FAILING_FILE)
+        ? { status: 400, code: 'InvalidRequest', message: 'refused' }
+        : undefined,
+    );
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+    await app.waitForRunPhase('partial', 120_000);
+    app.s3.putHooks.length = 0;
+    await app.gotoSection('History');
+  },
+);
+
+When(
+  'the storage service returns a transient error for a verify HEAD request',
+  async ({ app }) => {
+    const attempts = new Map<string, number>();
+    app.notes.verifyHeadAttempts = attempts;
+    app.s3.headHooks.push((_bucket, key) => {
+      if (METADATA_NAMES.some((name) => key.endsWith(name))) return undefined;
+      const count = (attempts.get(key) ?? 0) + 1;
+      attempts.set(key, count);
+      // The AWS SDK consumes its own three-attempt retry budget before the
+      // application-level verify retry sees the transient failure.
+      return count <= 3
+        ? { status: 503, code: 'ServiceUnavailable', message: 'try later' }
+        : undefined;
+    });
+    await app.page.getByRole('button', { name: 'Resume' }).first().click();
+    await app.waitForRunPhase('done', 120_000);
+  },
+);
+
+Then('the verify is retried with the same backoff as a failed upload', async ({ app }) => {
+  const attempts = app.notes.verifyHeadAttempts as Map<string, number>;
+  expect([...attempts.values()].some((count) => count >= 4)).toBe(true);
+  expect(await app.logText()).toMatch(/verify retry .* \(attempt 2\) after \d+ms/);
+});
+
+Then('the error is not counted toward the per-run file failure limit', async ({ app }) => {
+  await expect(app.runPhase()).toHaveText('done');
+  expect(await app.logText()).not.toContain('problem looks systemic');
+});
+
+Given('a run pauses because the network is reported offline', async ({ app }) => {
+  await rescanFromUpload(app, manyJpegs(1));
+  await app.page.evaluate(() => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+  });
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await expect.poll(() => app.logText(), { timeout: 30_000 }).toContain('waiting for network');
+});
+
+Then('the activity log records the offline wait exactly once', async ({ app }) => {
+  const log = await app.logText();
+  expect(log.match(/waiting for network/g) ?? []).toHaveLength(1);
+});
+
+When('the network returns', async ({ app }) => {
+  await app.page.evaluate(() => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    window.dispatchEvent(new Event('online'));
+  });
+  await app.waitForRunPhase('done', 120_000);
+});
+
+Then('the activity log records the recovery exactly once', async ({ app }) => {
+  const log = await app.logText();
+  expect(log.match(/network back/g) ?? []).toHaveLength(1);
+});
+
+Then('no further offline entries appear for that outage', async ({ app }) => {
+  const before = await app.logText();
+  await app.page.waitForTimeout(250);
+  const after = await app.logText();
+  expect(after.match(/waiting for network/g) ?? []).toHaveLength(1);
+  expect(after).toBe(before);
 });
 
 Given("a file's upload is refused for lack of permission", async ({ app }) => {

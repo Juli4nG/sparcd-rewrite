@@ -785,6 +785,44 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('does not issue another verify HEAD after a sibling lane aborts during retry backoff', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession(['done', 'done']);
+      mocks.client = makeClient(session.files);
+      const originalStat = mocks.client.statObject.getMockImplementation()!;
+      const retryKey = session.files[0].remoteKey!;
+      const fatalKey = session.files[1].remoteKey!;
+      let retryCalls = 0;
+      mocks.client.statObject.mockImplementation(async (bucket: string, key: string) => {
+        if (key === retryKey) {
+          retryCalls++;
+          if (retryCalls === 1) {
+            throw Object.assign(new Error('service unavailable'), { $metadata: { httpStatusCode: 503 } });
+          }
+        }
+        if (key === fatalKey) {
+          await Promise.resolve();
+          throw forbidden();
+        }
+        return originalStat(bucket, key);
+      });
+      let last: UploadSnapshot | null = null;
+      const run = resumeUpload(
+        { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+        (snap) => { last = snap; },
+      );
+
+      await vi.runAllTimersAsync();
+      const snap = await collect(run, () => last);
+
+      expect(snap.phase).toBe('error');
+      expect(retryCalls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('respawns lanes when a manual target rises mid-run', async () => {
     const session = makeSession(Array.from({ length: 6 }, () => 'pending'));
     mocks.client = makeClient(session.files);

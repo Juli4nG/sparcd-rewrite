@@ -504,6 +504,7 @@ function makeRunner(
           const wait = backoff(attempt);
           log('warn', `verify retry ${it.key} (attempt ${attempt + 2}) after ${Math.round(wait)}ms`);
           await sleep(wait);
+          if (cancelled || abort.signal.aborted) throw err;
           await ensureOnline();
           attempt++;
         }
