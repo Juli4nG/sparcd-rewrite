@@ -86,6 +86,8 @@ export function History() {
   // True while the fallback <input> picker is open. Separate from the shared
   // preparation lock because a cancelled native picker may fire no change event.
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerOpenRef = useRef(false);
+  const pickerCleanupRef = useRef<(() => void) | null>(null);
   const reselectRef = useRef<HTMLInputElement>(null);
   const pendingReselect = useRef<BatchRecord | null>(null);
 
@@ -101,26 +103,18 @@ export function History() {
     void refresh();
   }, [refresh]);
 
-  // Clear pickerOpen when the native picker is cancelled. The `cancel` event on
-  // <input type="file"> is supported in Chrome 113+, Firefox 91+, Safari 17+.
-  // Browsers that don't support it leave pickerOpen true until onChange fires.
+  const closePicker = useCallback(() => {
+    pickerOpenRef.current = false;
+    pickerCleanupRef.current?.();
+    pickerCleanupRef.current = null;
+    setPickerOpen(false);
+  }, []);
+
+  // A picker normally restores focus, but remove any native listeners if
+  // History unmounts first.
   useEffect(() => {
-    if (!pickerOpen || !reselectRef.current) return;
-    const input = reselectRef.current;
-    const onCancel = () => setPickerOpen(false);
-    input.addEventListener('cancel', onCancel);
-    return () => input.removeEventListener('cancel', onCancel);
-  }, [pickerOpen]);
-  // Fallback for Safari ≤16 and Firefox ≤90, which don't fire `cancel` on
-  // <input type="file">. When the window regains focus after the OS picker
-  // closes with no selection, clear the guard so Resume buttons re-enable.
-  useEffect(() => {
-    if (!pickerOpen || !reselectRef.current) return;
-    const input = reselectRef.current;
-    const onFocus = () => { if (!input.files?.length) setPickerOpen(false); };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [pickerOpen]);
+    return () => pickerCleanupRef.current?.();
+  }, []);
 
   const running = activeSessionId !== null;
   const online = useOnline();
@@ -281,9 +275,28 @@ export function History() {
           // re-acquires the lock itself when files actually arrive.
           clearPreparation(batch.id);
           clearActiveRun();
+          pickerOpenRef.current = true;
           setPickerOpen(true);
           pendingReselect.current = batch;
-          reselectRef.current?.click();
+          const input = reselectRef.current;
+          if (!input) {
+            closePicker();
+            return;
+          }
+          // Attach before the synchronous native picker call. Older Safari and
+          // Firefox can restore focus before this handler returns and never emit
+          // `cancel`, so a post-render effect is too late to observe dismissal.
+          const onCancel = () => closePicker();
+          const onFocus = () => {
+            if (pickerOpenRef.current && !input.files?.length) closePicker();
+          };
+          input.addEventListener('cancel', onCancel);
+          window.addEventListener('focus', onFocus);
+          pickerCleanupRef.current = () => {
+            input.removeEventListener('cancel', onCancel);
+            window.removeEventListener('focus', onFocus);
+          };
+          input.click();
         }
       } finally {
         clearPreparation(batch.id);
@@ -298,12 +311,12 @@ export function History() {
         }
       }
     },
-    [s3Config, launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun],
+    [s3Config, launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun, closePicker],
   );
 
   const onReselectInput = useCallback(
     async (list: File[] | null) => {
-      setPickerOpen(false);
+      closePicker();
       const batch = pendingReselect.current;
       pendingReselect.current = null;
       if (!batch || !list || list.length === 0) return;
@@ -339,7 +352,7 @@ export function History() {
         }
       }
     },
-    [launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun],
+    [launchWithBundle, beginActiveRun, beginPreparation, setPreparationProgress, clearPreparation, clearActiveRun, closePicker],
   );
 
   const discard = useCallback(

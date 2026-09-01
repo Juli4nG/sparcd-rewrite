@@ -388,15 +388,6 @@ export class App {
     await this.page.addInitScript(() => {
       // @ts-expect-error removing an optional capability
       delete window.showDirectoryPicker;
-      // Suppress file-input .click() so no native picker opens and no `cancel`
-      // event fires. This matches the observable behaviour on Safari ≤16 /
-      // Firefox ≤90: the fallback input.click() completes with no dialog and
-      // no cancel, leaving pickerOpen=true until the window `focus` fires.
-      const origInputClick = HTMLInputElement.prototype.click;
-      HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
-        if (this.type === 'file') return;
-        origInputClick.call(this);
-      };
       const real = window.matchMedia.bind(window);
       window.matchMedia = (q: string) =>
         q.includes('pointer: coarse')
@@ -418,6 +409,22 @@ export class App {
       await this.page.getByRole('button', { name: 'Connect', exact: true }).click();
       await expect(this.page.getByRole('button', { name: 'Logout' })).toBeVisible();
     }
+  }
+
+  /** Dismiss the next fallback file picker synchronously without a cancel
+   * event, matching the ordering in Safari <=16 and Firefox <=90. */
+  async dismissFallbackPickerWithoutCancel(): Promise<void> {
+    await this.page.evaluate(() => {
+      const original = HTMLInputElement.prototype.click;
+      HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+        if (this.type === 'file') {
+          HTMLInputElement.prototype.click = original;
+          window.dispatchEvent(new Event('focus'));
+          return;
+        }
+        original.call(this);
+      };
+    });
   }
 
   /**

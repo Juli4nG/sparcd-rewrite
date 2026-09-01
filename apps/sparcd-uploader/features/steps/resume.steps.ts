@@ -565,15 +565,12 @@ Then('repeated clicks never start two runs at once', async ({ app }) => {
 
 When('the folder picker is opened and dismissed without selecting a folder', async ({ app }) => {
   await app.gotoSection('History');
+  await app.dismissFallbackPickerWithoutCancel();
   // Click Resume — takes the <input webkitdirectory> fallback path because
-  // showDirectoryPicker was removed by the preceding step.
+  // showDirectoryPicker was removed by the preceding step. The test shim
+  // restores focus from inside input.click(), before the click handler returns,
+  // matching the production ordering that previously lost this event.
   await app.page.getByRole('button', { name: 'Resume' }).first().click();
-  // Wait until pickerOpen is reflected in the DOM (all Resume buttons disabled)
-  // before dispatching focus, so the window focus listener is attached.
-  await expect(app.page.getByRole('button', { name: 'Resume' }).first()).toBeDisabled({ timeout: 5_000 });
-  // Simulate the window regaining focus after the OS picker closes without a
-  // selection — the fix path for browsers that don't fire the `cancel` event.
-  await app.page.evaluate(() => window.dispatchEvent(new Event('focus')));
 });
 
 Then('the Resume button becomes available again', async ({ app }) => {
