@@ -591,6 +591,46 @@ Then('the retry is recorded in the activity log', async ({ app }) => {
   expect(await app.logText()).toMatch(/failed [^\s]*IMG_0002\.JPG/);
 });
 
+Given("the browser's navigator.onLine flag is stuck reporting offline", async ({ app }) => {
+  await app.page.evaluate(() => {
+    const state = window as unknown as { offlineClockOffset: number; actualDateNow: () => number };
+    state.offlineClockOffset = 0;
+    state.actualDateNow = Date.now.bind(Date);
+    Date.now = () => state.actualDateNow() + state.offlineClockOffset;
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+  });
+});
+
+Given('ordinary focus events do not correct the stuck flag', async ({ app }) => {
+  expect(await app.page.evaluate(() => navigator.onLine)).toBe(false);
+});
+
+When(
+  'the run has waited through several poll intervals with no change to the flag',
+  async ({ app }) => {
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+    await expect.poll(() => app.logText()).toContain('waiting for network');
+    for (let elapsed = 30_000; elapsed <= 90_000; elapsed += 30_000) {
+      await app.page.evaluate(() => {
+        const state = window as unknown as { offlineClockOffset: number };
+        state.offlineClockOffset += 30_000;
+        window.dispatchEvent(new Event('focus'));
+      });
+    }
+  },
+);
+
+Then('it lets one upload attempt proceed anyway', async ({ app }) => {
+  await expect.poll(() => mediaPuts(app).length, { timeout: 10_000 }).toBeGreaterThan(0);
+  expect(await app.logText()).toContain('navigator.onLine stuck false');
+});
+
+Then('if that attempt succeeds the run completes normally', async ({ app }) => {
+  await app.waitForRunPhase('done', 120_000);
+  expect(await app.page.evaluate(() => navigator.onLine)).toBe(false);
+});
+
 Given("a file's upload is refused for lack of permission", async ({ app }) => {
   await rescanFromUpload(app, manyJpegs(24));
   // Pin the lanes so the abort has files left to skip — adaptive would be free
