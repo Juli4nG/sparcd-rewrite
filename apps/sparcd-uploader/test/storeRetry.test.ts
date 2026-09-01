@@ -100,16 +100,14 @@ describe('automatic partial-run retry lifecycle', () => {
     expect(useStore.getState().activeRun).toBe(replacement);
   });
 
-  it('surfaces an IndexedDB failure on the run instead of rejecting', async () => {
+  it('keeps phase as partial after an IndexedDB failure so the next event can retry', async () => {
     mocks.loadSession.mockRejectedValueOnce(new Error('database unavailable'));
 
     await expect(useStore.getState().retryPartialRun()).resolves.toBeUndefined();
 
-    expect(useStore.getState().activeSnap).toMatchObject({
-      phase: 'error',
-      error: expect.stringContaining('database unavailable'),
-      log: [expect.objectContaining({ kind: 'error', text: expect.stringContaining('database unavailable') })],
-    });
+    // Phase must stay 'partial' — transitioning to 'error' would block all
+    // future auto-retries triggered by visibility or online events.
+    expect(useStore.getState().activeSnap).toMatchObject({ phase: 'partial' });
     expect(mocks.resumeUpload).not.toHaveBeenCalled();
   });
 });

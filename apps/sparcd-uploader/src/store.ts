@@ -637,16 +637,11 @@ export const useStore = create<UploaderState>()(
             (next) => get().setActiveSnap(next, generation),
           );
           get().setActiveRun(run, generation);
-        } catch (error) {
-          if (retryPartialRunGeneration !== attempt || get().activeSnap !== activeSnap) return;
-          const detail = error instanceof Error ? error.message : String(error);
-          get().setActiveSnap({
-            ...activeSnap,
-            version: activeSnap.version + 1,
-            phase: 'error',
-            error: `Couldn't resume this upload (${detail}). Retry again; if it keeps failing, return to Upload and start over.`,
-            log: [...activeSnap.log, { kind: 'error', text: `Automatic retry failed: ${detail}` }],
-          });
+        } catch {
+          // Transient IDB or resume error — leave phase as 'partial' so the
+          // next visibility or online event can try again. Permanent failures
+          // are surfaced by the manual Retry button in Upload.tsx, which has
+          // its own error display.
         } finally {
           if (retryPartialRunPending === attempt) retryPartialRunPending = null;
         }
