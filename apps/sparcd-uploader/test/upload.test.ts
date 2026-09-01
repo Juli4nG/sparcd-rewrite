@@ -496,6 +496,40 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('logs the offline wait once per outage, not once per poll tick', async () => {
+    // Regression for #71 (log flood). Before the fix, ensureOnline logged
+    // "waiting for network…" inside the while loop, so every 30-second poll
+    // produced a log entry per lane. After the fix: one warn on entry to the
+    // offline wait, one info when the network returns — no matter how many
+    // polls fire in between.
+    const fakeWindow = new EventTarget();
+    vi.stubGlobal('window', fakeWindow);
+    vi.stubGlobal('navigator', { onLine: false });
+    try {
+      const session = makeSession(['pending']);
+      mocks.client = makeClient(session.files);
+      let last: UploadSnapshot | null = null;
+      const run = resumeUpload(
+        { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(1) },
+        (snap) => { last = snap; },
+      );
+      // Let the lane reach ensureOnline and emit the "waiting" warn.
+      await new Promise((r) => setTimeout(r, 20));
+      vi.stubGlobal('navigator', { onLine: true });
+      fakeWindow.dispatchEvent(new Event('online'));
+      const snap = await collect(run, () => last);
+      expect(snap.phase).toBe('done');
+      const waitingLogs = snap.log.filter((l) => l.text.includes('waiting for network'));
+      const backLogs    = snap.log.filter((l) => l.text.includes('network back'));
+      expect(waitingLogs).toHaveLength(1);
+      expect(waitingLogs[0].kind).toBe('warn');
+      expect(backLogs).toHaveLength(1);
+      expect(backLogs[0].kind).toBe('info');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('publishes metadata after a clean sweep', async () => {
     const session = makeSession(Array.from({ length: 2 }, () => 'pending'));
     mocks.client = makeClient(session.files);
@@ -705,6 +739,50 @@ describe('upload runs continue past per-file blob failures', () => {
     expect(snap.files.filter((f) => f.state === 'skipped')).toHaveLength(2);
     expect(snap.skippedBytes).toBe(session.files[0].size + session.files[1].size);
     expect(snap.uploadedBytes).toBe(session.files.reduce((n, f) => n + f.size, 0));
+  });
+
+  it('retries a transient statObject error during verify instead of counting it as a file failure', async () => {
+    // Regression for #71. Before the fix, a transient statObject error (network
+    // blip, 5xx) in verifyExisting propagated straight to the lane and
+    // incremented fileFailures. At concurrency 11+ a single blip could exhaust
+    // MAX_FILE_FAILURES (10) and trigger the systemic abort. With the fix,
+    // verifyExisting has its own retry loop: transient errors back off and retry,
+    // never reaching the lane's failure counter.
+    vi.useFakeTimers();
+    try {
+      const count = 11; // one more than MAX_FILE_FAILURES
+      const session = makeSession(Array.from({ length: count }, () => 'done'));
+      mocks.client = makeClient(session.files);
+      const callCounts = new Map<string, number>();
+      mocks.client.statObject.mockImplementation(async (_bucket: string, key: string) => {
+        const n = (callCounts.get(key) ?? 0) + 1;
+        callCounts.set(key, n);
+        if (n === 1) {
+          // First call throws a transient 503 — without the verify retry loop
+          // this would propagate to the lane and increment fileFailures.
+          throw Object.assign(new Error('service unavailable'), { $metadata: { httpStatusCode: 503 } });
+        }
+        const r = session.files.find((f) => f.remoteKey === key)!;
+        return { size: r.size, metadata: { sha256: r.sha256 } };
+      });
+      let last: UploadSnapshot | null = null;
+      const run = resumeUpload(
+        { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(count) },
+        (snap) => { last = snap; },
+      );
+      // Advance fake clock through all 11 backoff sleeps (each ≤ 500 ms) plus
+      // the drivePool supervisor ticks between them.
+      await vi.runAllTimersAsync();
+      const snap = await collect(run, () => last);
+      expect(snap.phase).toBe('done');
+      expect(snap.files.every((f) => f.state === 'skipped')).toBe(true);
+      // Every key must have been tried at least twice: the first 503 was
+      // retried rather than counted as a file failure. (Some keys get a third
+      // call from the finalReview digest sample — >= 2 covers both.)
+      for (const f of session.files) expect(callCounts.get(f.remoteKey!)).toBeGreaterThanOrEqual(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('respawns lanes when a manual target rises mid-run', async () => {
