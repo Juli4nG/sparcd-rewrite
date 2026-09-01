@@ -215,6 +215,9 @@ function waitForOnline(signal: AbortSignal): Promise<void> {
       cleanup();
       reject(new Error('cancelled'));
     };
+    // Guard against a signal that already fired before the listeners were
+    // attached — the 'abort' event would never fire in that case.
+    if (signal.aborted) { onAbort(); return; }
     window.addEventListener('online', onDone);
     window.addEventListener('focus', onDone);
     const poll = setInterval(onDone, ONLINE_POLL_MS);
@@ -457,11 +460,11 @@ function makeRunner(
     // not just once the retry loop is already running.
     const ensureOnline = async (): Promise<void> => {
       while (typeof window !== 'undefined' && navigator.onLine === false) {
-        if (cancelled) throw new Error('cancelled');
+        if (cancelled || abort.signal.aborted) throw new Error('cancelled');
         log('warn', `waiting for network to retry ${it.key}`);
         await waitForOnline(abort.signal);
       }
-      if (cancelled) throw new Error('cancelled');
+      if (cancelled || abort.signal.aborted) throw new Error('cancelled');
     };
 
     // A completed blob from a prior run: sanity-check the remote copy before
