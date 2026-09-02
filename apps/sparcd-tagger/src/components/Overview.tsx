@@ -159,6 +159,7 @@ export function Overview({
                   onPick={onPick}
                   onDrill={onDrill}
                   onDropSpecies={onDropSpecies}
+                  narrow={width < 360}
                 />
               ) : (
                 <div
@@ -228,6 +229,7 @@ function BurstBand({
 
 // Each cell subscribes only to its own draft, so tagging one image never
 // re-renders its neighbours (on top of virtualization already bounding the count).
+// narrow=true collapses the species/type/timestamp columns for the Focus strip.
 function ListCell({
   img,
   index,
@@ -236,6 +238,7 @@ function ListCell({
   onPick,
   onDrill,
   onDropSpecies,
+  narrow,
 }: {
   img: TagImage;
   index: number;
@@ -244,16 +247,19 @@ function ListCell({
   onPick: (i: number, mods: PickMods) => void;
   onDrill?: (i: number) => void;
   onDropSpecies?: (i: number, tag: AppliedTag) => void;
+  narrow?: boolean;
 }) {
   const draft = useDraftStore((s) => s.drafts[img.key]);
   const eff = effectiveOf(img, draft);
+  const isVideo = isVideoImage(img);
+  const tsParts = img.baseTimestamp ? img.baseTimestamp.split('T') : null;
   return (
     <button
       {...speciesDropProps(index, onDropSpecies)}
       onClick={(e) => onPick(index, modsOf(e))}
       onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
-      className={`w-full h-full flex items-center gap-2.5 px-2.5 text-left border-b border-ruleSoft border-l-2 ${
+      className={`w-full h-full flex items-center gap-2 px-2.5 overflow-hidden text-left border-b border-ruleSoft border-l-2 ${
         selected
           ? 'border-l-accent bg-mark'
           : active
@@ -262,31 +268,43 @@ function ListCell({
       }`}
     >
       <span className="w-12 shrink-0">
-        <Thumb objectKey={img.key} alt={img.fileName} isVideo={isVideoImage(img)} />
+        <Thumb objectKey={img.key} alt={img.fileName} isVideo={isVideo} />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          {isVideoImage(img) && (
-            <span className="shrink-0 bg-paperHover border border-rule text-inkSoft font-mono text-[10px] px-1 leading-tight">
-              VIDEO
-            </span>
-          )}
-          <span
-            className="block text-[12px] font-mono text-inkSoft truncate"
-            title={img.fileName}
-          >
-            {img.fileName}
-          </span>
-        </span>
-        <span className="block text-[12px] truncate">
+      <span
+        className="min-w-0 flex-1 font-mono text-[12px] text-inkSoft truncate"
+        title={img.fileName}
+      >
+        {img.fileName}
+      </span>
+      {!narrow && (
+        <span className="w-24 shrink-0 text-[12px] truncate">
           {eff.observations.length ? (
             <span className="text-ink">{summarize(eff.observations)}</span>
           ) : (
-            <span className="text-inkMute">untagged</span>
+            <span className="text-inkMute">—</span>
           )}
         </span>
-      </span>
-      <span className="shrink-0 flex flex-col items-end gap-0.5">
+      )}
+      {!narrow && (
+        <span className="w-7 shrink-0 flex justify-center">
+          <span className="bg-paperHover border border-rule text-inkSoft font-mono text-[9px] px-0.5 leading-tight">
+            {isVideo ? 'VID' : 'IMG'}
+          </span>
+        </span>
+      )}
+      {!narrow && (
+        <span className="w-20 shrink-0 flex flex-col font-mono text-[11px] text-inkSoft leading-tight">
+          {tsParts ? (
+            <>
+              <span>{tsParts[0]}</span>
+              <span>{tsParts[1]?.slice(0, 5)}</span>
+            </>
+          ) : (
+            <span className="text-inkMute">—</span>
+          )}
+        </span>
+      )}
+      <span className="shrink-0 flex flex-col items-center gap-0.5 w-4">
         {isEditedFromBase(eff) && (
           <span className="w-1.5 h-1.5 rounded-full bg-accent" title="unsaved edit" />
         )}
@@ -295,7 +313,6 @@ function ListCell({
             ?
           </span>
         )}
-        <span className="text-[11px] font-mono text-inkMute">{index + 1}</span>
       </span>
       {onDrill && (
         <span
