@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { correctedTimestamp } from '@sparcd/camtrap';
 import { Thumb } from './Thumb';
 import { useDraftStore } from '../lib/drafts';
 import { effectiveOf, isEditedFromBase, isGhostObs } from '../lib/effective';
@@ -250,15 +251,29 @@ function ListCell({
   narrow?: boolean;
 }) {
   const draft = useDraftStore((s) => s.drafts[img.key]);
+  const timeOffset = useDraftStore((s) => s.timeOffset);
   const eff = effectiveOf(img, draft);
   const isVideo = isVideoImage(img);
-  const tsParts = img.baseTimestamp ? img.baseTimestamp.split('T') : null;
+  const species = summarize(eff.observations) || 'untagged';
+  const timestamp = correctedTimestamp(img.baseTimestamp, timeOffset, draft?.timeOverride ?? null);
+  const tsParts = timestamp ? timestamp.split('T') : null;
+  const edited = isEditedFromBase(eff);
+  const rowLabel = [
+    `Filename: ${img.fileName}`,
+    `Species: ${species}`,
+    ...(!narrow
+      ? [`Media type: ${isVideo ? 'video' : 'image'}`, timestamp ? `Capture time: ${timestamp}` : 'Capture time unavailable']
+      : []),
+    ...(edited ? ['Unsaved edit'] : []),
+    ...(eff.questionable ? ['Questionable'] : []),
+  ].join('; ');
   return (
     <button
       {...speciesDropProps(index, onDropSpecies)}
       onClick={(e) => onPick(index, modsOf(e))}
       onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
+      aria-label={rowLabel}
       className={`w-full h-full flex items-center gap-2 px-2.5 overflow-hidden text-left border-b border-ruleSoft border-l-2 ${
         selected
           ? 'border-l-accent bg-mark'
@@ -271,29 +286,41 @@ function ListCell({
         <Thumb objectKey={img.key} alt={img.fileName} isVideo={isVideo} />
       </span>
       <span
+        data-column="filename"
+        aria-label={`Filename: ${img.fileName}`}
         className="min-w-0 flex-1 font-mono text-[12px] text-inkSoft truncate"
         title={img.fileName}
       >
         {img.fileName}
       </span>
+      <span
+        data-column="species"
+        aria-label={`Species: ${species}`}
+        title={species}
+        className={`${narrow ? 'w-20' : 'w-24'} shrink-0 text-[12px] truncate ${
+          eff.observations.length ? 'text-ink' : 'text-inkMute'
+        }`}
+      >
+        {species}
+      </span>
       {!narrow && (
-        <span className="w-24 shrink-0 text-[12px] truncate">
-          {eff.observations.length ? (
-            <span className="text-ink">{summarize(eff.observations)}</span>
-          ) : (
-            <span className="text-inkMute">—</span>
-          )}
-        </span>
-      )}
-      {!narrow && (
-        <span className="w-7 shrink-0 flex justify-center">
+        <span
+          data-column="media-type"
+          aria-label={`Media type: ${isVideo ? 'video' : 'image'}`}
+          className="w-7 shrink-0 flex justify-center"
+        >
           <span className="bg-paperHover border border-rule text-inkSoft font-mono text-[9px] px-0.5 leading-tight">
             {isVideo ? 'VID' : 'IMG'}
           </span>
         </span>
       )}
       {!narrow && (
-        <span className="w-20 shrink-0 flex flex-col font-mono text-[11px] text-inkSoft leading-tight">
+        <span
+          data-column="timestamp"
+          aria-label={timestamp ? `Capture time: ${timestamp}` : 'Capture time unavailable'}
+          title={timestamp || 'No capture timestamp'}
+          className="w-20 shrink-0 flex flex-col font-mono text-[11px] text-inkSoft leading-tight"
+        >
           {tsParts ? (
             <>
               <span>{tsParts[0]}</span>
@@ -304,12 +331,16 @@ function ListCell({
           )}
         </span>
       )}
-      <span className="shrink-0 flex flex-col items-center gap-0.5 w-4">
-        {isEditedFromBase(eff) && (
-          <span className="w-1.5 h-1.5 rounded-full bg-accent" title="unsaved edit" />
+      <span data-column="markers" className="shrink-0 flex flex-col items-center gap-0.5 w-4">
+        {edited && (
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-accent"
+            title="unsaved edit"
+            aria-label="Unsaved edit"
+          />
         )}
         {eff.questionable && (
-          <span className="text-[11px] text-warn" title="questionable">
+          <span className="text-[11px] text-warn" title="questionable" aria-label="Questionable">
             ?
           </span>
         )}

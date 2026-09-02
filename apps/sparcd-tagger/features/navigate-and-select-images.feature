@@ -20,6 +20,18 @@ Feature: Move through an upload and choose which images an action applies to
     And the Focus view keeps the list alongside the enlarged image
 
   @unmapped
+  Scenario: List rows expose the useful image details without ambiguous status clutter
+    Given an image has a corrected timestamp and meaningful review markers
+    When the detailed Overview list is opened
+    Then filename and species are separate accessible columns
+    And image and video rows identify their media type
+    And capture timestamps show corrected and unavailable values accurately
+    And long column values preserve their full accessible text
+    And row numbers and the old species indicator are absent
+    And meaningful edit and questionable markers remain accessible
+    And the Focus strip keeps filename and species but omits the detail columns
+
+  @unmapped
   Scenario: Images can be stepped through from the keyboard
     When the next-image or previous-image key is pressed
     Then focus moves one image in that direction
