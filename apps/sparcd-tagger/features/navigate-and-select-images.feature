@@ -29,6 +29,7 @@ Feature: Move through an upload and choose which images an action applies to
     And long column values preserve their full accessible text
     And row numbers and the old species indicator are absent
     And meaningful edit and questionable markers remain accessible
+    And a narrow Overview keeps filenames visible in its compact rows
     And the Focus strip keeps filename and species but omits the detail columns
 
   @unmapped

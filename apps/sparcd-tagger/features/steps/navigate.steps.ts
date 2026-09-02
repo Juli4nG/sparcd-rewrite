@@ -123,6 +123,21 @@ Then('meaningful edit and questionable markers remain accessible', async ({ page
   await expect(markers.locator('[title]')).toHaveCount(2);
 });
 
+Then('a narrow Overview keeps filenames visible in its compact rows', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const row = listRow(page, 'IMG002.JPG');
+  const filename = row.locator('[data-column="filename"]');
+  await expect(filename).toBeVisible();
+  expect((await filename.boundingBox())?.width).toBeGreaterThan(80);
+  await expect(row.locator('[data-column="species"]')).toBeVisible();
+  await expect(row.locator('[data-column="media-type"]')).toHaveCount(0);
+  await expect(row.locator('[data-column="timestamp"]')).toHaveCount(0);
+  await expect(row).toHaveAttribute(
+    'aria-label',
+    /Filename: IMG002.JPG; Species: untagged; Unsaved edit/,
+  );
+});
+
 Then('the Focus strip keeps filename and species but omits the detail columns', async ({ page }) => {
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
   const row = listRow(page, 'IMG002.JPG');
