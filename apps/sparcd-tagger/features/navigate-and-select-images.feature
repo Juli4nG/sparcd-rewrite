@@ -23,7 +23,7 @@ Feature: Move through an upload and choose which images an action applies to
   Scenario: List rows expose the useful image details without ambiguous status clutter
     Given an image has a corrected timestamp and meaningful review markers
     When the detailed Overview list is opened
-    Then filename and species are separate accessible columns
+    Then list columns follow the Name, Type, Date, Species sort-control order
     And image and video rows identify their media type
     And capture timestamps show corrected and unavailable values accurately
     And long column values preserve their full accessible text

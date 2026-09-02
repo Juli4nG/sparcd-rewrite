@@ -62,8 +62,10 @@ When('the detailed Overview list is opened', async ({ page }) => {
   await expect(listRow(page, 'IMG002.JPG')).toBeVisible();
 });
 
-Then('filename and species are separate accessible columns', async ({ page }) => {
+Then('list columns follow the Name, Type, Date, Species sort-control order', async ({ page }) => {
   const tagged = listRow(page, 'IMG001.JPG');
+  expect(await tagged.locator('[data-column]').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-column'))))
+    .toEqual(['filename', 'media-type', 'timestamp', 'species', 'markers']);
   await expect(tagged.locator('[data-column="filename"]')).toHaveAttribute(
     'aria-label',
     'Filename: IMG001.JPG',
@@ -77,7 +79,7 @@ Then('filename and species are separate accessible columns', async ({ page }) =>
   await expect(untagged).toHaveAttribute('aria-label', 'Species: untagged');
   await expect(listRow(page, 'IMG002.JPG')).toHaveAttribute(
     'aria-label',
-    /Filename: IMG002.JPG; Species: untagged; Media type: image; Capture time:/,
+    /Filename: IMG002.JPG; Media type: image; Capture time:.*; Species: untagged/,
   );
 });
 

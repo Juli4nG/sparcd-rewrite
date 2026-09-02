@@ -230,7 +230,7 @@ function BurstBand({
 
 // Each cell subscribes only to its own draft, so tagging one image never
 // re-renders its neighbours (on top of virtualization already bounding the count).
-// narrow=true collapses the species/type/timestamp columns for the Focus strip.
+// narrow=true collapses the type/timestamp columns for the Focus strip.
 function ListCell({
   img,
   index,
@@ -256,14 +256,14 @@ function ListCell({
   const isVideo = isVideoImage(img);
   const species = summarize(eff.observations) || 'untagged';
   const timestamp = correctedTimestamp(img.baseTimestamp, timeOffset, draft?.timeOverride ?? null);
-  const tsParts = timestamp ? timestamp.split('T') : null;
+  const timestampDisplay = timestamp ? `${timestamp.slice(0, 10)} ${timestamp.slice(11, 16)}` : null;
   const edited = isEditedFromBase(eff);
   const rowLabel = [
     `Filename: ${img.fileName}`,
-    `Species: ${species}`,
     ...(!narrow
       ? [`Media type: ${isVideo ? 'video' : 'image'}`, timestamp ? `Capture time: ${timestamp}` : 'Capture time unavailable']
       : []),
+    `Species: ${species}`,
     ...(edited ? ['Unsaved edit'] : []),
     ...(eff.questionable ? ['Questionable'] : []),
   ].join('; ');
@@ -293,16 +293,6 @@ function ListCell({
       >
         {img.fileName}
       </span>
-      <span
-        data-column="species"
-        aria-label={`Species: ${species}`}
-        title={species}
-        className={`${narrow ? 'w-20' : 'w-24'} shrink-0 text-[12px] truncate ${
-          eff.observations.length ? 'text-ink' : 'text-inkMute'
-        }`}
-      >
-        {species}
-      </span>
       {!narrow && (
         <span
           data-column="media-type"
@@ -319,18 +309,25 @@ function ListCell({
           data-column="timestamp"
           aria-label={timestamp ? `Capture time: ${timestamp}` : 'Capture time unavailable'}
           title={timestamp || 'No capture timestamp'}
-          className="w-20 shrink-0 flex flex-col font-mono text-[11px] text-inkSoft leading-tight"
+          className="w-28 shrink-0 whitespace-nowrap font-mono text-[11px] text-inkSoft leading-tight"
         >
-          {tsParts ? (
-            <>
-              <span>{tsParts[0]}</span>
-              <span>{tsParts[1]?.slice(0, 5)}</span>
-            </>
+          {timestampDisplay ? (
+            timestampDisplay
           ) : (
             <span className="text-inkMute">—</span>
           )}
         </span>
       )}
+      <span
+        data-column="species"
+        aria-label={`Species: ${species}`}
+        title={species}
+        className={`${narrow ? 'w-20' : 'w-24'} shrink-0 text-[12px] truncate ${
+          eff.observations.length ? 'text-ink' : 'text-inkMute'
+        }`}
+      >
+        {species}
+      </span>
       <span data-column="markers" className="shrink-0 flex flex-col items-center gap-0.5 w-4">
         {edited && (
           <span
