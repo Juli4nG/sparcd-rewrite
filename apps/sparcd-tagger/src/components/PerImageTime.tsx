@@ -5,6 +5,7 @@
 // original is never rewritten locally.
 
 import { useState } from 'react';
+import type { TimestampSource } from '@sparcd/camtrap';
 import { normalizeTimestampInput } from '../lib/timeshift';
 
 export function PerImageTime({
@@ -12,6 +13,7 @@ export function PerImageTime({
   corrected,
   hasUploadShift,
   overridden,
+  timestampSource,
   onSet,
   onClear,
 }: {
@@ -19,6 +21,7 @@ export function PerImageTime({
   corrected: string; // resolved corrected time (offset + any override)
   hasUploadShift: boolean; // an upload-level offset is active
   overridden: boolean; // this image carries a per-image override
+  timestampSource?: TimestampSource; // set when the camera wrote no time
   onSet: (iso: string) => void;
   onClear: () => void;
 }) {
@@ -98,6 +101,18 @@ export function PerImageTime({
                 shifted
               </span>
             )
+          )}
+          {timestampSource && (
+            <span
+              className="ml-2 font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkSoft border border-rule px-1"
+              title={
+                timestampSource === 'manual'
+                  ? 'Entered by hand in the uploader.'
+                  : 'Estimated by the uploader — the camera wrote no time. Set the real time here if you know it.'
+              }
+            >
+              {timestampSource === 'manual' ? 'entered by hand' : 'estimated'}
+            </span>
           )}
         </span>
         {corrected !== original && original && (

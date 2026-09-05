@@ -1049,6 +1049,7 @@ function FocusPane({
                 corrected={corrected}
                 hasUploadShift={hasUploadShift}
                 overridden={overridden}
+                timestampSource={current.timestampSource}
                 onSet={onSetTime}
                 onClear={onClearTime}
               />

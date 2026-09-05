@@ -4,6 +4,14 @@ import type { FlipObservation } from '@sparcd/flip';
 import { useStore, type FileEntry } from '../store';
 import { formatBytes } from '../lib/scanFiles';
 import { formatNaive, type NaiveDateTime } from '../lib/exifTime';
+import type { CaptureEstimate } from '../lib/estimateCaptureTime';
+import {
+  useCaptureEstimates,
+  effectiveTime,
+  methodLine,
+  sourceTag,
+  spreadStartOf,
+} from '../lib/useCaptureEstimates';
 import type { FileValidation, Severity } from '../lib/validation';
 
 const ROW = 52;
@@ -108,6 +116,9 @@ function Row({
   validation,
   showTags,
   active,
+  estimates,
+  spreadStart,
+  timeZone,
   onSelect,
   onRemove,
 }: {
@@ -115,11 +126,20 @@ function Row({
   validation?: FileValidation;
   showTags: boolean;
   active: boolean;
+  estimates: Map<string, CaptureEstimate>;
+  spreadStart?: NaiveDateTime;
+  timeZone: string;
   onSelect: () => void;
   onRemove: () => void;
 }) {
   const dims = entry.width && entry.height ? `${entry.width}×${entry.height}` : '—';
   const isVideo = entry.mediaKind === 'video';
+  // A file with no camera time still has one: what the rule estimated, or the
+  // override typed over it. The tag says which, so the column is never a lie.
+  const { naive, source } = effectiveTime(entry, estimates);
+  const how = source
+    ? methodLine(entry, estimates.get(entry.id), timeZone, spreadStart)
+    : undefined;
   return (
     <div
       onClick={onSelect}
@@ -139,8 +159,14 @@ function Row({
           <span className="text-inkSoft mr-1.5">{isVideo ? 'VIDEO' : 'JPEG'}</span>
           {entry.exifCamera ?? (entry.sha256 ? `${entry.sha256.slice(0, 12)}…` : entry.relPath)}
         </span>
-        <span className="sm:hidden block truncate font-mono text-[11px] text-inkMute">
-          {shortTime(entry.exifNaive)} · {dims} · {formatBytes(entry.size)}
+        <span className="sm:hidden flex items-center gap-1 min-w-0 font-mono text-[11px] text-inkMute" title={how}>
+          <span className="shrink-0">{shortTime(naive)}</span>
+          {source && (
+            <span className="shrink-0 border border-dashed border-rule px-1 text-[10px] uppercase tracking-[0.08em]">
+              {sourceTag(source)}
+            </span>
+          )}
+          <span className="truncate">· {dims} · {formatBytes(entry.size)}</span>
         </span>
         {showTags && (
           <span
@@ -151,8 +177,13 @@ function Row({
           </span>
         )}
       </span>
-      <span className="hidden sm:block font-mono text-[12px] text-inkSoft truncate" title={entry.exifNaive ? formatNaive(entry.exifNaive) : undefined}>
-        {shortTime(entry.exifNaive)}
+      <span className="hidden sm:block font-mono text-[12px] text-inkSoft truncate" title={how ?? (naive ? formatNaive(naive) : undefined)}>
+        {shortTime(naive)}
+        {source && (
+          <span className="block font-body text-[10px] font-[600] tracking-[0.08em] uppercase text-inkMute border border-dashed border-rule w-fit px-1 mt-0.5">
+            {sourceTag(source)}
+          </span>
+        )}
       </span>
       <span className="hidden sm:block font-mono text-[12px] text-inkSoft text-right">{dims}</span>
       <span className="hidden sm:block font-mono text-[12px] text-inkSoft text-right">{formatBytes(entry.size)}</span>
@@ -181,6 +212,10 @@ export function FileList({ severityFilter = null }: { severityFilter?: Severity 
   const showTags = useStore((s) => s.flipId !== null);
   const parentRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
+
+  const estimates = useCaptureEstimates();
+  const spreadStart = useMemo(() => spreadStartOf(allFiles), [allFiles]);
+  const timeZone = useStore((s) => s.uploadTimeZone);
 
   const files = useMemo(
     () =>
@@ -259,6 +294,9 @@ export function FileList({ severityFilter = null }: { severityFilter?: Severity 
                     validation={validations[f.id]}
                     showTags={showTags}
                     active={vi.index === active}
+                    estimates={estimates}
+                    spreadStart={spreadStart}
+                    timeZone={timeZone}
                     onSelect={() => setActive(vi.index)}
                     onRemove={() => removeFile(f.id)}
                   />

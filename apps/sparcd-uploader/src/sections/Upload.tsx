@@ -17,7 +17,6 @@ import type { ProcessResponse } from '../lib/processPool';
 import { ensureBundle } from '../lib/resume';
 import { Note, RunMonitor } from '../components/RunMonitor';
 import { UploadCompleteDialog } from '../components/UploadCompleteDialog';
-import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 
 const sectionLabel = 'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
 
@@ -242,7 +241,8 @@ export function Upload() {
               },
             ]),
         );
-        const result = await ensureBundle(session.batch, session, resolved);
+        const attached = new Map(files.map((f) => [f.relPath, f.file]));
+        const result = await ensureBundle(session.batch, session, resolved, attached);
         if (!connectionIsCurrent()) return;
         if (!result.ok) {
           const reasons = result.problems.map((p) => `${p.fileName}: ${p.reason}`).slice(0, 3).join('; ');
@@ -324,13 +324,9 @@ export function Upload() {
     );
   }
 
-  // Not an early return, unlike the checks above: a run may already be
-  // active in the background (processing.ts keeps going regardless of the
-  // screen), and swapping out the whole step would hide it. A file missing a
-  // capture time only blocks the final publish (see the close-triggering
-  // effect above) — fixed inline below, the same editor Assign uses, so
-  // there's no need to leave this step for it.
-  const needsCaptureTime = files.some((f) => f.processState === 'ready' && !f.exifNaive);
+  // Estimating and overriding belongs to Assign; this step only states what
+  // the batch will publish so nobody is surprised by the deployment flag.
+  const noCameraTime = files.filter((f) => f.processState === 'ready' && !f.exifNaive).length;
 
   return (
     <div className="max-w-2xl mx-auto space-y-7">
@@ -429,14 +425,10 @@ export function Upload() {
         </div>
       )}
 
-      {needsCaptureTime && (
-        <section className="space-y-2">
-          <h2 className={sectionLabel}>Capture time</h2>
-          <p className="font-body text-[13px] text-inkSoft">
-            Publishing waits until every file below has a capture time.
-          </p>
-          <CaptureTimeEditor files={files} />
-        </section>
+      {noCameraTime > 0 && (
+        <p className="font-mono text-[12px] text-inkSoft">
+          {noCameraTime} files without camera time · estimated in Assign · timestamp_issues → true
+        </p>
       )}
 
       {/* Live run */}

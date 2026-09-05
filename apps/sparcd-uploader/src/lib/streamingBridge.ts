@@ -4,7 +4,7 @@
 // when the user is on the History or Settings section while a run is in flight.
 
 import { onFilesReady } from './processing';
-import { processingComplete, captureTimeComplete } from './validation';
+import { processingComplete } from './validation';
 import { useStore } from '../store';
 import type { StreamingUploadRun } from './upload';
 import type { FileEntry } from '../store';
@@ -12,7 +12,7 @@ import type { FileEntry } from '../store';
 export function maybeCloseStreamingQueue(files: FileEntry[]): void {
   const { streamingRun, streamingQueueClosed, closeStreamingQueue } = useStore.getState();
   if (!streamingRun || streamingQueueClosed) return;
-  if (processingComplete(files) && captureTimeComplete(files)) {
+  if (processingComplete(files)) {
     closeStreamingQueue(files);
   }
 }

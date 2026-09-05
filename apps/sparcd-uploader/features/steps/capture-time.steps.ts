@@ -1,4 +1,5 @@
 import { Given, When, Then, expect } from './fixtures';
+import type { App } from './app';
 import { clipVideo, jpegAt, jpegNoTime, standardBatch } from './batches';
 import { rescanFromAssign, writtenCsvRows } from './helpers';
 import { LEGACY_ZONE } from './fixtures-data';
@@ -114,130 +115,149 @@ Then('the stored time does not depend on the timezone of the machine uploading',
   expect(summer[4]).not.toBe('2026-07-01T16:00:00.000Z');
 });
 
-// --- manual entry ----------------------------------------------------------
+// --- times the camera did not write ---------------------------------------
+
+// IMG_0002 sits between two timestamped files (interpolated); IMG_0004 runs off
+// the end of the batch (offset). One batch exercises both estimate methods.
+const gappyBatch = () => [
+  jpegAt('IMG_0001.JPG', '2026:07:01 12:00:00'),
+  jpegNoTime('IMG_0002.JPG'),
+  jpegAt('IMG_0003.JPG', '2026:07:01 12:10:00'),
+  jpegNoTime('IMG_0004.JPG'),
+];
+
+/** The affected-files card for one file: its whole clickable face. */
+const card = (app: App, fileName: string) =>
+  app.page.getByRole('button', { name: new RegExp(fileName.replace('.', '\\.')) });
 
 Given('some examined files carry no camera capture time', async ({ app }) => {
+  await rescanFromAssign(app, gappyBatch());
+  await app.chooseDeployment('Bear Canyon');
+});
+
+Then('each of them already shows an estimated time, marked as an estimate', async ({ app }) => {
+  await expect(app.page.getByRole('heading', { name: 'Capture times' })).toBeVisible();
+  await expect(app.page.getByText('2 without camera time')).toBeVisible();
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('2026-07-01 12:05:00');
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('EST.');
+  await expect(card(app, 'IMG_0004.JPG')).toContainText('2026-07-01 12:20:00');
+  await expect(card(app, 'IMG_0003.JPG')).toHaveCount(0); // it has a camera time
+});
+
+Then('a file between two timestamped files sits midway between them', async ({ app }) => {
+  await expect(app.page.getByText('between IMG_0001.JPG and IMG_0003.JPG')).toBeVisible();
+  await expect(app.page.getByText('10 min after IMG_0003.JPG (last file)')).toBeVisible();
+});
+
+Given('the batch begins and ends with a file carrying no camera time', async ({ app }) => {
   await rescanFromAssign(app, [
-    jpegAt('IMG_TIMED.JPG', '2026:07:01 12:00:00'),
-    jpegNoTime('IMG_A.JPG'),
-    jpegNoTime('IMG_B.JPG'),
+    jpegNoTime('IMG_0000.JPG'),
+    jpegAt('IMG_0001.JPG', '2026:07:01 12:00:00'),
+    jpegNoTime('IMG_0002.JPG'),
   ]);
 });
 
-Then('the Assign step lists exactly those files with a time field each', async ({ app }) => {
-  await expect(app.page.getByRole('heading', { name: 'Capture time' })).toBeVisible();
-  const rows = app.page.locator('input[type="datetime-local"]');
-  // One bulk field plus one per file that has no camera time.
-  await expect(rows).toHaveCount(3);
-  const labels = await app.page.locator('[aria-label^="Clear capture time"], .max-h-\\[280px\\] span[title]').allTextContents();
-  expect(labels.join(' ')).toContain('IMG_A.JPG');
-  expect(labels.join(' ')).toContain('IMG_B.JPG');
-  expect(labels.join(' ')).not.toContain('IMG_TIMED.JPG');
+Then('the first file sits ten minutes before the earliest camera time', async ({ app }) => {
+  await expect(card(app, 'IMG_0000.JPG')).toContainText('2026-07-01 11:50:00');
+  await expect(app.page.getByText('10 min before IMG_0001.JPG (first file)')).toBeVisible();
 });
 
-Then('it states how many of them still have no time', async ({ app }) => {
-  await expect(app.page.getByText('2 of 2 file(s) still need a capture time.')).toBeVisible();
+Then('the last file sits ten minutes after the latest camera time', async ({ app }) => {
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('2026-07-01 12:10:00');
+  await expect(app.page.getByText('10 min after IMG_0001.JPG (last file)')).toBeVisible();
 });
 
-Given('several files are still missing a capture time', async ({ app }) => {
-  await rescanFromAssign(app, [
-    jpegAt('IMG_TIMED.JPG', '2026:07:01 12:00:00'),
-    jpegNoTime('IMG_A.JPG'),
-    jpegNoTime('IMG_B.JPG'),
-  ]);
-  // Give one of them a time by hand first, so the bulk apply has something to
-  // leave alone.
-  await app.page.locator('input[type="datetime-local"]').nth(1).fill('2026-05-05T05:05:05');
-  await expect(app.page.getByText('1 of 2 file(s) still need a capture time.')).toBeVisible();
+Given('no file in the batch carries a camera capture time', async ({ app }) => {
+  await rescanFromAssign(app, [jpegNoTime('IMG_0001.JPG'), jpegNoTime('IMG_0002.JPG')]);
 });
 
-When('a time is entered once and applied in bulk', async ({ app }) => {
-  await app.page.locator('input[type="datetime-local"]').first().fill('2026-09-09T09:09:09');
-  await app.page.getByRole('button', { name: /^Apply to \d+ unset$/ }).click();
+Then('every file takes the time its file was last modified', async ({ app }) => {
+  await expect(app.page.getByText(/^file modified time \(.+\)$/)).toHaveCount(2);
+  // The exact instant is the browser's File.lastModified, so pin the shape only.
+  await expect(card(app, 'IMG_0001.JPG')).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
 });
 
-Then('every file that had no time receives it', async ({ app }) => {
-  await expect(app.page.locator('input[type="datetime-local"]').nth(2)).toHaveValue('2026-09-09T09:09:09');
+Then('the panel says so, and offers to spread the times instead', async ({ app }) => {
   await expect(
-    app.page.getByText('All 2 previously-missing file(s) now have a manual capture time.'),
+    app.page.getByText('No file in this batch has a camera capture time.'),
   ).toBeVisible();
+  await expect(app.page.getByText('Use Spread if the file dates are wrong too.')).toBeVisible();
+  await expect(app.page.getByRole('tab', { name: 'Spread from a start time' })).toBeVisible();
 });
 
-Then('files that already had a time keep the one they had', async ({ app }) => {
-  await expect(app.page.locator('input[type="datetime-local"]').nth(1)).toHaveValue('2026-05-05T05:05:05');
+// --- overriding an estimate ------------------------------------------------
+
+const overrideInput = (app: App) => app.page.locator('input[type="datetime-local"]');
+
+When("a time is typed over one file's estimate", async ({ app }) => {
+  await card(app, 'IMG_0002.JPG').click();
+  await overrideInput(app).fill('2026-05-05T05:05:05');
 });
 
-Given('a file whose camera wrote a capture time', async ({ app }) => {
-  await rescanFromAssign(app, [jpegAt('IMG_TIMED.JPG', '2026:07:01 12:00:00'), jpegNoTime('IMG_A.JPG')]);
-  await app.chooseDeployment('Bear Canyon');
+Then('that file shows the typed time as entered by hand', async ({ app }) => {
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('2026-05-05 05:05:05');
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('MANUAL');
 });
 
-Then('it is not offered for manual entry', async ({ app }) => {
-  await expect(app.page.getByRole('heading', { name: 'Capture time' })).toBeVisible();
-  const titles = await app.page.locator('input[type="datetime-local"]').count();
-  expect(titles).toBe(2); // bulk field + the one untimed file
-  await expect(app.page.getByTitle('SDCARD/IMG_TIMED.JPG')).toHaveCount(0);
+Then('clearing it returns the file to its estimate', async ({ app }) => {
+  await app.page
+    .getByRole('button', { name: '✕ back to estimate (2026-07-01 12:05:00)' })
+    .click();
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('2026-07-01 12:05:00');
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('EST.');
 });
 
-Then("the camera's time is what gets stored", async ({ app }) => {
-  await app.page.locator('input[type="datetime-local"]').nth(1).fill('2026-05-05T05:05:05');
-  await app.continueToUpload();
-  await app.dryRunCheckbox().uncheck();
-  await app.startRun();
-  await app.waitForRunPhase('done');
-  const rows = writtenCsvRows(app, 'media.csv');
-  const csv = rows.flat().join(',');
-  // Bear Canyon is America/Phoenix (UTC-7, no DST): 12:00 → 19:00Z.
-  expect(csv).toContain('2026-07-01T19:00:00');
-  expect(csv).not.toContain('2026-05-05T05:05:05');
+When('a start time and a spacing are applied to the selection', async ({ app }) => {
+  await app.page.getByRole('radio', { name: 'All estimated' }).click();
+  await app.page.getByRole('tab', { name: 'Spread from a start time' }).click();
+  await app.page.getByLabel('First image capture time').fill('2026-07-01T09:00:15');
+  await app.page.getByLabel('Spacing in seconds').fill('60');
+  await expect(
+    app.page.getByText('2 files land 2026-07-01 09:00:15 → 09:01:15, in filename order.'),
+  ).toBeVisible();
+  await app.page.getByRole('button', { name: 'Apply to 2 files' }).click();
 });
 
-When('a manually entered time is cleared', async ({ app }) => {
-  await rescanFromAssign(app, [jpegAt('IMG_TIMED.JPG', '2026:07:01 12:00:00'), jpegNoTime('IMG_A.JPG')]);
-  await app.chooseDeployment('Bear Canyon');
-  await app.page.locator('input[type="datetime-local"]').nth(1).fill('2026-05-05T05:05:05');
-  await expect(app.continueButton()).toBeEnabled();
-  await app.page.getByRole('button', { name: /^Clear capture time for/ }).click();
+Then('the files land at that start time, one spacing apart, in filename order', async ({ app }) => {
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('2026-07-01 09:00:15');
+  await expect(card(app, 'IMG_0004.JPG')).toContainText('2026-07-01 09:01:15');
 });
 
-Then('that file counts again as missing a capture time', async ({ app }) => {
-  await expect(app.page.getByText('1 of 1 file(s) still need a capture time.')).toBeVisible();
-});
-
-Then('the batch cannot be published until it is given one', async ({ app }) => {
-  await expect(app.continueButton()).toBeDisabled();
-  await expect(app.continueButton()).toHaveAttribute(
-    'title',
-    'Set a capture time for every file missing one',
-  );
+Then('each of them is marked as spread', async ({ app }) => {
+  await expect(app.page.getByText('SPREAD', { exact: true })).toHaveCount(2);
 });
 
 When('a date that does not exist is entered, such as 31 February', async ({ app }) => {
-  await rescanFromAssign(app, [jpegAt('IMG_TIMED.JPG', '2026:07:01 12:00:00'), jpegNoTime('IMG_A.JPG')]);
-  await app.chooseDeployment('Bear Canyon');
-  await app.setControlledValue('input[type="datetime-local"]', '2026-02-31T10:00:00', 1);
+  await rescanFromAssign(app, gappyBatch());
+  await card(app, 'IMG_0002.JPG').click();
+  await app.setControlledValue('input[type="datetime-local"]', '2026-02-31T10:00:00', 0);
 });
 
-Then('it is not accepted as a capture time', async ({ app }) => {
-  await expect(app.page.getByText('1 of 1 file(s) still need a capture time.')).toBeVisible();
-  await expect(app.continueButton()).toBeDisabled();
-  // A real date on the same field is accepted, so the field itself works.
-  await app.setControlledValue('input[type="datetime-local"]', '2026-02-28T10:00:00', 1);
-  await expect(app.continueButton()).toBeEnabled();
+Then('the file keeps the estimate it already had', async ({ app }) => {
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('2026-07-01 12:05:00');
+  await expect(card(app, 'IMG_0002.JPG')).toContainText('EST.');
 });
 
-// --- publishing ------------------------------------------------------------
+// --- what a batch with estimates publishes ---------------------------------
 
-Given('every examined file has either a camera time or a manual one', async ({ app }) => {
-  await rescanFromAssign(app, [jpegAt('IMG_TIMED.JPG', '2026:07:01 12:00:00'), jpegNoTime('IMG_A.JPG'), clipVideo()]);
-  await app.chooseDeployment('Bear Canyon');
-  await app.page.locator('input[type="datetime-local"]').nth(1).fill('2026-05-05T05:05:05');
-  await expect(app.continueButton()).toBeEnabled();
+Then('the deployment is flagged as having a timestamp issue', async ({ app }) => {
+  const rows = writtenCsvRows(app, 'deployments.csv');
+  expect(rows[0][15]).toBe('true');
 });
 
-Then('every media row carries a capture time', async ({ app }) => {
+Then('each file whose time the camera did not write carries a marker saying where it came from', async ({ app }) => {
   const rows = writtenCsvRows(app, 'media.csv');
-  expect(rows.length).toBe(3);
-  for (const row of rows) expect(row[4]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+Z)?$/);
-  expect(rows.find((r) => r[6] === 'IMG_A.JPG')![4]).toBe('2026-05-05T12:05:05.000Z');
+  expect(rows.find((r) => r[6] === 'IMG_0002.JPG')![10]).toBe('[TIMESTAMP:interpolated]');
+  expect(rows.find((r) => r[6] === 'IMG_0004.JPG')![10]).toBe('[TIMESTAMP:offset]');
+});
+
+Then('files the camera did time carry no marker', async ({ app }) => {
+  const rows = writtenCsvRows(app, 'media.csv');
+  expect(rows.find((r) => r[6] === 'IMG_0001.JPG')![10]).toBe('');
+  expect(rows.find((r) => r[6] === 'IMG_0002.JPG')![4]).toBe('2026-07-01T19:05:00.000Z');
+});
+
+Then('the batch can be published without anyone entering a time', async ({ app }) => {
+  await expect(app.continueButton()).toBeEnabled();
+  await expect(app.continueButton()).toHaveAttribute('title', 'Continue to upload');
 });

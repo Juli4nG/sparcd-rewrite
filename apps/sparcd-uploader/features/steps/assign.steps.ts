@@ -1,6 +1,6 @@
 import { Given, When, Then, expect } from './fixtures';
-import { jpegNoTime, jpegAt, standardBatch } from './batches';
-import { reconnectAndReturnToAssign, rescanFromAssign } from './helpers';
+import { standardBatch } from './batches';
+import { reconnectAndReturnToAssign } from './helpers';
 import {
   BUCKET_A,
   BUCKET_B,
@@ -71,18 +71,6 @@ Given('the uploader identity is empty', async ({ app }) => {
 
 Then('it states that an uploader identity must be set first', async ({ app }) => {
   await expect(app.continueButton()).toHaveAttribute('title', 'Set an uploader identity first');
-});
-
-Given('at least one examined file has neither a camera capture time nor a manual one', async ({ app }) => {
-  await rescanFromAssign(app, [jpegAt('IMG_0001.JPG', '2026:07:01 12:00:00'), jpegNoTime('IMG_NOTIME.JPG')]);
-  await app.chooseDeployment('Bear Canyon');
-});
-
-Then('it states that a capture time is needed for every file missing one', async ({ app }) => {
-  await expect(app.continueButton()).toHaveAttribute(
-    'title',
-    'Set a capture time for every file missing one',
-  );
 });
 
 // --- the collection list ---------------------------------------------------

@@ -105,7 +105,7 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   return fmt;
 }
 
-function partsInZone(utcMs: number, timeZone: string): NaiveDateTime {
+export function partsInZone(utcMs: number, timeZone: string): NaiveDateTime {
   const fmt = formatterFor(timeZone);
   const map: Record<string, number> = {};
   for (const p of fmt.formatToParts(new Date(utcMs))) {

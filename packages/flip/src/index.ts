@@ -54,6 +54,8 @@ export interface FlipFile {
   exifTimestamp?: string;
   /** A capture time entered by hand for a file the camera left blank. */
   manualTimestamp?: string;
+  estimatedTimestamp?: string;
+  timestampSource?: 'manual' | 'spread' | 'interpolated' | 'offset' | 'file-modified';
 
   /** The worker's own sniff of the media type — authoritative over the file
    *  extension, and the value that lands in `media.csv`. */
@@ -72,7 +74,7 @@ export interface FlipFile {
  * tagger shows the same value the upload will carry.
  */
 export const captureTimestampOf = (file: FlipFile): string | undefined =>
-  file.exifTimestamp ?? file.manualTimestamp;
+  file.exifTimestamp ?? file.manualTimestamp ?? file.estimatedTimestamp;
 
 export interface FlipRecord {
   id: string;

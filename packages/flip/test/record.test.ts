@@ -191,3 +191,14 @@ describe('the hand back', () => {
     expect((await readFlipRecord('batch-1'))!.taggerUser).toBe('');
   });
 });
+
+it('reads old records and resolves optional estimated timestamps after camera and manual time', async () => {
+  await writeFlipRecord(record());
+  expect(await readFlipRecord('batch-1')).toEqual(record());
+  const f = inspected({ exifTimestamp: undefined, estimatedTimestamp: '2024-01-10T08:00:00', timestampSource: 'interpolated' });
+  await writeFlipRecord(record({ files: [f] }));
+  expect((await readFlipRecord('batch-1'))?.files[0]).toEqual(f);
+  expect(captureTimestampOf(f)).toBe(f.estimatedTimestamp);
+  expect(captureTimestampOf({ ...f, manualTimestamp: 'manual' })).toBe('manual');
+  expect(captureTimestampOf({ ...f, manualTimestamp: 'manual', exifTimestamp: 'camera' })).toBe('camera');
+});

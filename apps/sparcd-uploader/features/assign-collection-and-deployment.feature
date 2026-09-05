@@ -37,12 +37,6 @@ Feature: Assign a batch to a collection and a camera location
     And it states that an uploader identity must be set first
 
   @unmapped
-  Scenario: The batch cannot be uploaded while any examined file lacks a capture time
-    Given at least one examined file has neither a camera capture time nor a manual one
-    Then the Continue button is disabled
-    And it states that a capture time is needed for every file missing one
-
-  @unmapped
   Scenario: The collections offered are the ones the connection can actually read
     When the Assign step opens
     Then the tool lists the collections readable with the connected credentials

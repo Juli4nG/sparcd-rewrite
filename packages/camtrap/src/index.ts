@@ -9,7 +9,10 @@
 // leaves a trailing newline — matched here so a round-trip is byte-stable.
 
 /** One row of `deployments.csv` — a camera location for one upload. */
+export type TimestampSource = 'manual' | 'spread' | 'interpolated' | 'offset' | 'file-modified';
+
 export type Deployment = {
+  timestampIssues?: boolean;
   deploymentId: string; // "<collection-uuid>:<location-id>"
   locationId: string;
   locationName: string;
@@ -20,6 +23,7 @@ export type Deployment = {
 
 /** One row of `media.csv` — one image blob. */
 export type Media = {
+  comments?: string;
   mediaId: string;
   deploymentId: string;
   mediaPath: string; // full S3 object key under the upload prefix
@@ -92,7 +96,7 @@ export function serializeDeployments(deployments: Deployment[]): string {
         f6(d.elevation), // 12 camera_height (elevation)
         '0.000000', // 13 camera_tilt
         '0', // 14 camera_heading
-        'false', // 15 timestamp_issues
+        d.timestampIssues ? 'true' : 'false', // 15 timestamp_issues
         '', // 16 bait_use
         '', // 17 session
         '', // 18 array
@@ -132,7 +136,7 @@ export function serializeMedia(media: Media[]): string {
         m.mimeType, // 7  file_media_type
         '', // 8  exif_data
         'false', // 9  favorite
-        '', // 10 comments
+        m.comments ?? '', // 10 comments
       ]),
     )
     .join('');
@@ -423,6 +427,7 @@ export function parseMedia(csv: string): Media[] {
     fileName: r[MEDIA_COL.fileName] ?? '',
     timestamp: r[MEDIA_COL.timestamp] ?? '',
     mimeType: r[MEDIA_COL.mediaType] ?? '',
+    comments: r[MEDIA_COL.comments] ?? '',
   }));
 }
 
@@ -448,6 +453,16 @@ export function parseObservations(csv: string): Observation[] {
 export type TagMarker = { prefix: string; value: string };
 
 /** Reserved prefixes for v0. Unknown prefixes are tolerated and preserved. */
+export const TIMESTAMP_PREFIX = 'TIMESTAMP';
+export function buildMediaComments(input: { timestampSource?: TimestampSource }): string {
+  return input.timestampSource ? serializeTagMarkers([{ prefix: TIMESTAMP_PREFIX, value: input.timestampSource }]) : '';
+}
+
+export function timestampSourceFromComments(comments: string): TimestampSource | null {
+  const value = parseTagMarkers(comments).find((m) => m.prefix === TIMESTAMP_PREFIX)?.value;
+  return value === 'manual' || value === 'spread' || value === 'interpolated' || value === 'offset' || value === 'file-modified' ? value : null;
+}
+
 export const COMMONNAME_PREFIX = 'COMMONNAME';
 export const REQUESTED_SPECIES_PREFIX = 'REQUESTED_SPECIES';
 
