@@ -38,7 +38,7 @@ export function SpeciesChangedModal({ added, removed, modified, onAcknowledge }:
           <div className="text-[15px] font-[600] text-ink">Species vocabulary has changed</div>
           <div className="mt-1 text-[13px] font-body text-inkSoft">
             The species list on the server has been updated since your last session.
-            Your saved key assignments have been updated to match.
+            Your saved key assignments will be updated when you press I understand.
           </div>
         </div>
 
