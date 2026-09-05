@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Issue #82 — UI diff: missing EXIF capture time</title>
+<style>
+/* Field Notebook v2 tokens, copied from apps/sparcd-uploader/src/index.css */
+:root {
+  --paper: #f4ecd8;
+  --paperHover: #efe6cc;
+  --panel: #fbf7eb;
+  --panelHover: #f5efe0;
+  --ink: #1c1a14;
+  --inkSoft: #4a463b;
+  --inkMute: #6b6555;
+  --rule: #8c8166;
+  --ruleSoft: #cfc4a8;
+  --accent: #0b3358;
+  --accentSoft: #dfe7ef;
+  --warn: #8a3818;
+  --ok: #33602e;
+  --mark: #ead8a3;
+
+  /* diff annotation only — not app tokens */
+  --diffAdd: #1d6b3f;
+  --diffCut: #a63314;
+  --annBg: var(--paper);
+
+  --font-body: 'Inter Tight', Inter, system-ui, sans-serif;
+  --font-display: Newsreader, Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.page { max-width: 1100px; margin: 0 auto; padding: 56px 24px 96px; }
+
+/* The uploader's file row needs ~600px to read; the two-up comparison breaks
+   out past the 1100px prose column so both sides stay legible. */
+.wide {
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1360px, calc(100vw - 32px));
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 34px;
+  line-height: 1.15;
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+}
+.subtitle { font-size: 15px; line-height: 1.55; color: var(--inkSoft); margin: 0 0 26px; max-width: 74ch; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+.chip {
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--inkSoft);
+  padding: 4px 9px;
+  white-space: nowrap;
+}
+.chip b { color: var(--ink); font-weight: 600; }
+
+.legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px;
+  border: 1px solid var(--ruleSoft); background: var(--panel);
+  padding: 12px 16px; margin-bottom: 22px;
+}
+.legend .lead {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--inkSoft);
+}
+.legend .item { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--inkSoft); }
+.swatch { width: 26px; height: 15px; display: inline-block; }
+.swatch.add { border: 2px dashed var(--diffAdd); }
+.swatch.cut { border: 2px dashed var(--diffCut); }
+
+.callout {
+  border: 1px solid var(--ruleSoft); border-left: 3px solid var(--rule);
+  background: var(--panel); padding: 14px 18px; margin-bottom: 8px;
+}
+.callout h3 {
+  margin: 0 0 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--inkSoft);
+}
+.callout p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--inkSoft); max-width: 92ch; }
+.callout .mono { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink); }
+
+/* --- annotations ---------------------------------------------------- */
+.ann { position: relative; display: block; outline: 2px dashed var(--diffAdd); outline-offset: 3px; }
+.ann-i { display: inline-block; }
+.ann::after {
+  content: attr(data-ann);
+  position: absolute; top: -6px; right: -5px; transform: translateY(-100%);
+  background: var(--annBg); color: var(--diffAdd);
+  font-family: var(--font-body); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 0 3px; line-height: 1.5; white-space: nowrap;
+  pointer-events: none;
+}
+.ann.inside::after { top: 3px; right: 3px; transform: none; }
+.ann.right::after { top: 50%; right: auto; left: 100%; transform: translateY(-50%); margin-left: 10px; }
+.ann.cut { outline-color: var(--diffCut); }
+.ann.cut::after { color: var(--diffCut); }
+
+/* --- screens --------------------------------------------------------- */
+.screen { margin-top: 58px; }
+.screen > h2 {
+  font-family: var(--font-display); font-weight: 500; font-size: 21px;
+  margin: 0 0 4px; padding-bottom: 8px; border-bottom: 1px solid var(--rule);
+}
+.where {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--inkMute);
+  margin: 8px 0 22px;
+}
+.cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
+.colhead {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--inkSoft); margin-bottom: 8px; display: flex; align-items: center; gap: 10px;
+}
+.colhead::after { content: ''; flex: 1; height: 1px; background: var(--ruleSoft); }
+.caption {
+  margin: 18px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--inkSoft); max-width: 86ch;
+}
+
+/* app surface — mirrors the uploader's bordered panel */
+.app { --annBg: var(--panel); border: 1px solid var(--rule); background: var(--panel); padding: 16px; }
+
+/* --- uploader inspect header ---------------------------------------- */
+.inspect-head {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.summary { font-size: 13.5px; color: var(--inkSoft); margin: 0; }
+.summary .m { font-family: var(--font-mono); color: var(--ink); }
+.summary .w { font-family: var(--font-mono); color: var(--warn); }
+.btnrow { display: flex; align-items: center; gap: 8px; }
+.btn {
+  font-family: var(--font-body); font-size: 13px; padding: 5px 12px;
+  border: 1px solid var(--ink); background: transparent; color: var(--ink); white-space: nowrap;
+}
+.btn.mark { background: var(--mark); }
+.btn.solid { background: var(--ink); color: var(--paper); font-weight: 600; }
+.btn.off { opacity: 0.4; }
+.btn-note { font-size: 11px; color: var(--inkMute); margin: 6px 0 0; }
+
+/* --- file list ------------------------------------------------------- */
+.fl { border: 1px solid var(--rule); background: var(--panel); }
+.fl-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 132px 60px 50px 150px;
+  gap: 8px; align-items: start;
+  padding: 9px 10px; border-bottom: 1px solid var(--ruleSoft);
+}
+.fl-row:last-child { border-bottom: 0; }
+.fl-head {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--inkSoft); border-bottom: 1px solid var(--rule); align-items: center; padding: 7px 10px;
+}
+.thumb { width: 30px; height: 30px; background: var(--paperHover); border: 1px solid var(--ruleSoft); display: block; }
+.thumb.vid { display: grid; place-items: center; color: var(--inkMute); font-size: 13px; }
+.fname { font-family: var(--font-mono); font-size: 12px; color: var(--ink); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fsub { font-family: var(--font-mono); font-size: 10.5px; color: var(--inkMute); display: block; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fsub .k { color: var(--inkSoft); margin-right: 5px; }
+.cell { font-family: var(--font-mono); font-size: 11px; color: var(--inkSoft); white-space: nowrap; }
+.cell.r { text-align: right; }
+.dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--inkSoft); }
+.tip { font-size: 10.5px; line-height: 1.45; color: var(--inkMute); margin-top: 3px; }
+.tag {
+  display: inline-block; font-family: var(--font-body); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; padding: 0 4px; line-height: 1.5;
+}
+.tag.est { border: 1px dashed var(--rule); color: var(--inkMute); }
+.tag.manual { border: 1px solid var(--accent); color: var(--accent); }
+.tag.badge { border: 1px solid var(--rule); color: var(--inkSoft); }
+.hint { font-size: 12.5px; color: var(--inkMute); margin: 12px 0 0; }
+.hint .mono { font-family: var(--font-mono); }
+
+/* --- capture time editor -------------------------------------------- */
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.banner { border: 1px solid; padding: 9px 12px; font-size: 12.5px; line-height: 1.5; }
+.banner.warn { border-color: rgba(138, 56, 24, 0.4); color: var(--warn); background: var(--paper); }
+.banner.calm { border-color: var(--ruleSoft); color: var(--inkSoft); background: var(--paper); }
+.helper { font-size: 12px; line-height: 1.6; color: var(--inkMute); margin: 0; }
+.helper .mono { font-family: var(--font-mono); }
+.bulk { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.flabel { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--inkSoft); display: block; margin-bottom: 4px; }
+.dtinput {
+  border: 1px solid var(--rule); background: var(--paper); padding: 5px 9px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--ink); min-width: 0;
+}
+.dtinput.empty { color: var(--inkMute); }
+.cte-list { border: 1px solid var(--ruleSoft); }
+.cte-row {
+  display: grid; grid-template-columns: minmax(0, 118px) minmax(0, 1fr) auto auto;
+  gap: 10px; align-items: center; padding: 9px 10px; border-bottom: 1px solid var(--ruleSoft);
+}
+.cte-row:last-child { border-bottom: 0; }
+.cte-name { font-family: var(--font-mono); font-size: 12px; color: var(--inkSoft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.est-block { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.est-time { font-family: var(--font-mono); font-size: 12px; color: var(--inkSoft); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: nowrap; }
+.est-how { font-size: 11px; color: var(--inkMute); }
+.xbtn { font-family: var(--font-mono); font-size: 12px; color: var(--inkMute); background: none; border: 0; padding: 0 2px; cursor: default; }
+.mono-note { font-family: var(--font-mono); font-size: 11.5px; color: var(--inkMute); margin: 10px 0 0; }
+.subcard { max-width: 760px; margin: 26px auto 0; }
+.subcard h4 {
+  margin: 0 0 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--inkSoft);
+}
+.after-only {
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--diffAdd); border: 1px dashed var(--diffAdd); padding: 0 4px; margin-left: 8px;
+}
+
+/* --- csv blocks ------------------------------------------------------ */
+.csv-title { font-family: var(--font-mono); font-size: 11.5px; color: var(--inkSoft); margin: 0 0 6px; }
+.csv-title:not(:first-child) { margin-top: 18px; }
+.csv {
+  --annBg: var(--paper);
+  border: 1px solid var(--ruleSoft); background: var(--paper); padding: 10px 12px;
+  font-family: var(--font-mono); font-size: 11px; line-height: 2.7; color: var(--ink);
+  overflow-x: auto; white-space: pre;
+}
+.csv .h { color: var(--inkMute); }
+.footnote { font-size: 12px; line-height: 1.6; color: var(--inkMute); margin: 14px 0 0; }
+.footnote .mono { font-family: var(--font-mono); }
+
+/* --- tagger ---------------------------------------------------------- */
+.pit { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pit-label { font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--inkSoft); }
+.pit-time { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.pit-btn { font-size: 12px; border: 1px solid var(--rule); padding: 4px 10px; color: var(--inkSoft); background: transparent; }
+
+footer.note {
+  margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--ruleSoft);
+  font-size: 12.5px; line-height: 1.65; color: var(--inkMute); max-width: 86ch;
+}
+
+/* --- #82 rebuilt capture-times panel --------------------------------- */
+.badge-warn {
+  display: inline-block; border: 1px solid rgba(138, 56, 24, 0.5); color: var(--warn);
+  font-family: var(--font-mono); font-size: 11px; padding: 1px 6px; line-height: 1.5;
+}
+.p82 {
+  display: grid; grid-template-columns: 170px minmax(0, 1fr);
+  border: 1px solid var(--ruleSoft); background: var(--paper); margin-top: 22px;
+}
+.p82-rail { --annBg: var(--paper); border-right: 1px solid var(--ruleSoft); padding: 12px 10px; min-width: 0; }
+.p82-main { --annBg: var(--paper); padding: 0 12px 12px; min-width: 0; }
+.seclabel {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--inkSoft); margin: 0 0 8px;
+}
+.scope { list-style: none; margin: 0 0 10px; padding: 0; }
+.scope li {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 12.5px; color: var(--inkSoft); padding: 5px 7px; border-left: 2px solid transparent;
+}
+.scope li .n { font-family: var(--font-mono); font-size: 11.5px; color: var(--inkMute); }
+.scope li.sel { background: var(--paperHover); border-left-color: var(--ink); color: var(--ink); }
+.scope li.mute, .scope li.mute .n { color: var(--inkMute); }
+.rail-cap { font-size: 11px; line-height: 1.5; color: var(--inkMute); margin: 0; }
+
+.tabs {
+  display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--ruleSoft); margin-top: 20px;
+}
+.tab {
+  font-size: 13px; color: var(--inkSoft); padding: 6px 1px 7px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+.tab-note { margin-left: auto; font-size: 11px; line-height: 1.45; color: var(--inkMute); max-width: 34ch; }
+.op-line { font-size: 13px; line-height: 1.55; color: var(--inkSoft); margin: 12px 0 8px; }
+.op-sum { font-family: var(--font-mono); font-size: 12px; color: var(--ink); margin: 0; }
+
+.refcard { --annBg: var(--panel); border: 1px solid var(--ruleSoft); background: var(--panel); padding: 10px 12px; margin-top: 26px; }
+.refcard h5 {
+  margin: 0 0 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--inkMute);
+}
+.fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-start; }
+.field { flex: 1 1 148px; min-width: 0; }
+.field .dtinput { width: 100%; font-size: 11.5px; padding: 5px 7px; }
+.field .helper { margin-top: 4px; }
+
+/* timeline strip */
+.tlwrap { margin-top: 26px; }
+.tl-head { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+.tl-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--inkMute); }
+.sq { width: 9px; height: 9px; display: inline-block; }
+.sq.acc { background: var(--accent); }
+.sq.wrn { background: var(--warn); }
+.tlbar { position: relative; height: 28px; background: var(--ruleSoft); margin-top: 8px; }
+.tlbar i { position: absolute; top: 6px; width: 2px; height: 16px; background: var(--accent); }
+.tlbar i.est { top: 2px; width: 3px; height: 24px; background: var(--warn); }
+.tl-ends { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10.5px; color: var(--inkMute); margin-top: 4px; }
+.tl-cap { font-size: 11px; line-height: 1.5; color: var(--inkMute); margin: 6px 0 0; }
+
+/* affected files grid */
+.afwrap { margin-top: 26px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.imgcard { border: 1px solid var(--ruleSoft); background: var(--panel); padding: 8px; min-width: 0; }
+.ph { display: block; position: relative; width: 96px; max-width: 100%; height: 64px; background: var(--paperHover); border: 1px solid var(--ruleSoft); }
+.burn {
+  position: absolute; left: 0; right: 0; bottom: 0; text-align: center;
+  font-family: var(--font-mono); font-size: 8px; line-height: 1.7; color: var(--inkMute);
+  background: rgba(28, 26, 20, 0.07);
+}
+.imgcard .fname { margin-top: 7px; font-size: 11.5px; }
+.imgcard .est-time { font-size: 11px; margin-top: 4px; }
+.imgcard .est-how { display: block; font-size: 11px; line-height: 1.45; margin-top: 3px; }
+
+/* action row */
+.actionrow { display: flex; align-items: flex-start; gap: 14px 22px; flex-wrap: wrap; margin-top: 30px; }
+.flagbadge { display: inline-block; border: 1px solid var(--ruleSoft); padding: 4px 8px; font-family: var(--font-mono); font-size: 11.5px; color: var(--inkSoft); }
+.flagtail { font-size: 11px; color: var(--inkMute); margin-left: 8px; }
+
+/* --- reconciliation table -------------------------------------------- */
+.rec { width: 100%; border-collapse: collapse; border: 1px solid var(--ruleSoft); background: var(--panel); }
+.rec th {
+  text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--inkSoft); border-bottom: 1px solid var(--rule); padding: 9px 12px;
+}
+.rec td { border-bottom: 1px solid var(--ruleSoft); padding: 9px 12px; vertical-align: top; font-size: 13px; line-height: 1.55; color: var(--inkSoft); }
+.rec tr:last-child td { border-bottom: 0; }
+.rec td:first-child, .rec th:first-child { width: 42%; color: var(--ink); }
+.rec .mono { font-family: var(--font-mono); font-size: 12px; }
+.intro { font-size: 13.5px; line-height: 1.6; color: var(--inkSoft); margin: 0 0 18px; max-width: 88ch; }
+
+@media (max-width: 900px) {
+  .cmp { grid-template-columns: 1fr; gap: 34px; }
+  .wide { left: auto; transform: none; width: auto; }
+  .fl-row { grid-template-columns: 30px minmax(0, 1fr) 118px 150px; }
+  .fl-row .hide-sm { display: none; }
+  .p82 { grid-template-columns: 1fr; }
+  .p82-rail { border-right: 0; border-bottom: 1px solid var(--ruleSoft); }
+  .p82-main { padding: 0 12px 12px; }
+  .tab-note { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Issue #82 — UI diff: missing EXIF capture time</h1>
+  <p class="subtitle">What changes on screen when a file has no camera capture time. Batches where every file has one look exactly as they do today.</p>
+
+  <div class="chips">
+    <span class="chip"><b>1</b> gate lifted</span>
+    <span class="chip"><b>1</b> panel rebuilt</span>
+    <span class="chip"><b>1</b> new operation (Spread)</span>
+    <span class="chip"><b>2</b> badges</span>
+    <span class="chip"><b>2</b> CSV cells</span>
+  </div>
+
+  <div class="legend">
+    <span class="lead">Reading the diff</span>
+    <span class="item"><span class="swatch add"></span> new · changed</span>
+    <span class="item"><span class="swatch cut"></span> lifted · removed</span>
+    <span class="item">Outlines mark the element that moved; the content inside is drawn as the app draws it.</span>
+  </div>
+
+  <div class="callout">
+    <h3>When it shows up</h3>
+    <p>Only for files where the worker found no <span class="mono">DateTimeOriginal</span> / <span class="mono">CreateDate</span> / <span class="mono">ModifyDate</span> (images) or no <span class="mono">mvhd</span> creation time (videos). In a 128-file batch with 3 such files, 3 rows change; the other 125 look exactly as today. Spread and the scope rail only appear inside that panel.</p>
+  </div>
+
+  <!-- ===================== SCREEN 1 ===================== -->
+  <section class="screen">
+    <h2>Screen 1 — Inspect step</h2>
+    <p class="where">apps/sparcd-uploader · NewUpload.tsx step 'inspect' → FileList rows</p>
+
+    <div class="cmp wide">
+      <div>
+        <div class="colhead">Today</div>
+        <div class="app">
+          <div class="inspect-head">
+            <p class="summary"><span class="m">128</span> files · <span class="m">412 MB</span> · <span class="w">3</span> warnings</p>
+            <div class="btnrow">
+              <button class="btn">Start over</button>
+              <button class="btn mark">Tag species first</button>
+              <button class="btn solid">Continue</button>
+            </div>
+          </div>
+
+          <div class="fl">
+            <div class="fl-row fl-head">
+              <span></span><span>File</span><span>Timestamp</span><span class="cell r hide-sm">Pixels</span><span class="cell r hide-sm">Size</span><span>Status</span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb"></span>
+              <span><span class="fname">IMG_0041.JPG</span><span class="fsub"><span class="k">JPEG</span>Browning</span></span>
+              <span class="cell">2026-06-14 10:02:11</span>
+              <span class="cell r hide-sm">4608×2592</span>
+              <span class="cell r hide-sm">3.1 MB</span>
+              <span><span class="status"><span class="dot ok"></span>OK</span></span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb"></span>
+              <span><span class="fname">IMG_0042.JPG</span><span class="fsub"><span class="k">JPEG</span>Browning</span></span>
+              <span class="cell">—</span>
+              <span class="cell r hide-sm">4608×2592</span>
+              <span class="cell r hide-sm">3.0 MB</span>
+              <span>
+                <span class="status"><span class="dot warn"></span>Warning</span>
+                <span class="tip">No capture time — set one in Assign</span>
+              </span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb"></span>
+              <span><span class="fname">IMG_0043.JPG</span><span class="fsub"><span class="k">JPEG</span>Browning</span></span>
+              <span class="cell">2026-06-14 10:14:35</span>
+              <span class="cell r hide-sm">4608×2592</span>
+              <span class="cell r hide-sm">3.2 MB</span>
+              <span><span class="status"><span class="dot ok"></span>OK</span></span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb vid">▦</span>
+              <span><span class="fname">VID_0007.MP4</span><span class="fsub"><span class="k">VIDEO</span>Browning</span></span>
+              <span class="cell">—</span>
+              <span class="cell r hide-sm">1920×1080</span>
+              <span class="cell r hide-sm">28 MB</span>
+              <span>
+                <span class="status"><span class="dot warn"></span>Warning</span>
+                <span class="tip">No capture time — set one in Assign</span>
+              </span>
+            </div>
+          </div>
+
+          <p class="hint">Press <span class="mono">D</span> to drop a flagged duplicate — it's kept otherwise.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="colhead">With #82</div>
+        <div class="app">
+          <div class="inspect-head">
+            <p class="summary"><span class="m">128</span> files · <span class="m">412 MB</span> · <span class="w">3</span> warnings · <span class="ann ann-i" data-ann="new"><span class="m">3</span> estimated times</span></p>
+            <div class="btnrow">
+              <button class="btn">Start over</button>
+              <button class="btn mark">Tag species first</button>
+              <button class="btn solid">Continue</button>
+            </div>
+          </div>
+
+          <div class="fl">
+            <div class="fl-row fl-head">
+              <span></span><span>File</span><span>Timestamp</span><span class="cell r hide-sm">Pixels</span><span class="cell r hide-sm">Size</span><span>Status</span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb"></span>
+              <span><span class="fname">IMG_0041.JPG</span><span class="fsub"><span class="k">JPEG</span>Browning</span></span>
+              <span class="cell">2026-06-14 10:02:11</span>
+              <span class="cell r hide-sm">4608×2592</span>
+              <span class="cell r hide-sm">3.1 MB</span>
+              <span><span class="status"><span class="dot ok"></span>OK</span></span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb"></span>
+              <span><span class="fname">IMG_0042.JPG</span><span class="fsub"><span class="k">JPEG</span>Browning</span></span>
+              <span class="ann" data-ann="changed"><span class="cell">2026-06-14 10:08:23</span><br /><span class="tag est">est.</span></span>
+              <span class="cell r hide-sm">4608×2592</span>
+              <span class="cell r hide-sm">3.0 MB</span>
+              <span class="ann" data-ann="changed">
+                <span class="status"><span class="dot warn"></span>Warning</span>
+                <span class="tip">No camera time — estimated between IMG_0041 and IMG_0043. Override in Assign.</span>
+              </span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb"></span>
+              <span><span class="fname">IMG_0043.JPG</span><span class="fsub"><span class="k">JPEG</span>Browning</span></span>
+              <span class="cell">2026-06-14 10:14:35</span>
+              <span class="cell r hide-sm">4608×2592</span>
+              <span class="cell r hide-sm">3.2 MB</span>
+              <span><span class="status"><span class="dot ok"></span>OK</span></span>
+            </div>
+
+            <div class="fl-row">
+              <span class="thumb vid">▦</span>
+              <span><span class="fname">VID_0007.MP4</span><span class="fsub"><span class="k">VIDEO</span>Browning</span></span>
+              <span class="ann" data-ann="changed"><span class="cell">2026-06-14 10:24:35</span><br /><span class="tag est">est.</span></span>
+              <span class="cell r hide-sm">1920×1080</span>
+              <span class="cell r hide-sm">28 MB</span>
+              <span class="ann" data-ann="changed">
+                <span class="status"><span class="dot warn"></span>Warning</span>
+                <span class="tip">No container time — 10 min after IMG_0043 (last file). Override in Assign.</span>
+              </span>
+            </div>
+          </div>
+
+          <p class="hint">Press <span class="mono">D</span> to drop a flagged duplicate — it's kept otherwise.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="caption">No new control. The timestamp column fills in and the warning stays, so the count is still visible at a glance.</p>
+  </section>
+
+  <!-- ===================== SCREEN 2 ===================== -->
+  <section class="screen">
+    <h2>Screen 2 — Assign step, “Capture times” panel</h2>
+    <p class="where">apps/sparcd-uploader · Assign.tsx → CaptureTimeEditor.tsx, under the timezone picker</p>
+
+    <div class="cmp wide">
+      <div>
+        <div class="colhead">Today</div>
+        <div class="app">
+          <div class="stack">
+            <div class="banner warn">2 of 2 file(s) still need a capture time.</div>
+
+            <p class="helper">Cameras sometimes omit a capture time. Enter the wall-clock the camera would have written; it is interpreted in the upload timezone above, exactly like an EXIF time, and written to <span class="mono">media.csv</span>.</p>
+
+            <div class="bulk">
+              <label>
+                <span class="flabel">Bulk set</span>
+                <input class="dtinput" type="datetime-local" step="1" />
+              </label>
+              <button class="btn">Apply to 2 unset</button>
+            </div>
+
+            <div class="cte-list">
+              <div class="cte-row">
+                <span class="cte-name">IMG_0042.JPG</span>
+                <span></span>
+                <input class="dtinput" type="datetime-local" step="1" />
+                <span></span>
+              </div>
+              <div class="cte-row">
+                <span class="cte-name">VID_0007.MP4</span>
+                <span></span>
+                <input class="dtinput" type="datetime-local" step="1" />
+                <span></span>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:20px">
+            <button class="btn solid off">Continue</button>
+            <p class="btn-note">Enter a capture time for every file</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="colhead">With #82</div>
+        <div class="app">
+          <p class="summary"><span class="m">128</span> files · <span class="ann ann-i" data-ann="new" style="margin-left:5px"><span class="badge-warn">3 without camera time</span></span></p>
+
+          <div class="ann" data-ann="changed" style="margin-top:14px">
+            <div class="banner calm">3 files have no camera capture time. Times were estimated from neighbouring files, and this upload will be marked as having a known timestamp issue.</div>
+          </div>
+
+          <div class="p82">
+            <div class="ann p82-rail" data-ann="new">
+              <p class="seclabel">Apply to</p>
+              <ul class="scope">
+                <li class="sel">All estimated <span class="n">3</span></li>
+                <li>DCIM/100EK113/ <span class="n">2</span></li>
+                <li>VIDS/ <span class="n">1</span></li>
+                <li class="mute">Has camera time <span class="n">125</span></li>
+              </ul>
+              <p class="rail-cap">Selection is by folder or by failure, never image-by-image. Click a thumbnail to override a straggler.</p>
+            </div>
+
+            <div class="p82-main">
+              <div class="ann tabs" data-ann="new" role="tablist">
+                <span class="tab on" role="tab" aria-selected="true">Interpolate</span>
+                <span class="tab" role="tab" aria-selected="false">Spread from a start time</span>
+                <span class="tab-note">Wrong-but-present times (reset clock): fix in the tagger's time shift.</span>
+              </div>
+
+              <p class="op-line">Filled from timestamped neighbours in filename order. 10 minutes past the first or last file. File modified time when no neighbour exists.</p>
+              <p class="op-sum">3 gaps filled · nothing to enter</p>
+
+              <div class="ann refcard" data-ann="new">
+                <h5>Spread tab (shown for reference)</h5>
+                <div class="fields">
+                  <label class="field">
+                    <span class="flabel">First image</span>
+                    <input class="dtinput" type="text" value="2026-06-14 09:58" readonly size="16" />
+                    <p class="helper">Time of the earliest selected file</p>
+                  </label>
+                  <label class="field" style="flex-grow:1.35">
+                    <span class="flabel">Spacing</span>
+                    <input class="dtinput" type="text" value="From file order · 30 s" readonly size="23" />
+                    <p class="helper">Or: use file modified times</p>
+                  </label>
+                </div>
+                <p class="op-sum" style="margin-top:12px">3 files land 09:58 → 09:59, in filename order.</p>
+                <p style="margin:10px 0 0"><button class="btn">Apply to 3 files</button></p>
+              </div>
+
+            </div>
+          </div>
+
+            <div class="ann tlwrap" data-ann="new">
+              <div class="tl-head">
+                <span class="seclabel" style="margin:0">Camera times · <span class="mono" style="font-family:var(--font-mono);letter-spacing:0">Jun 14 09:58 – 18:42</span></span>
+                <span class="tl-legend"><span class="sq acc"></span>camera time (125)</span>
+                <span class="tl-legend"><span class="sq wrn"></span>estimated (3)</span>
+              </div>
+              <div class="tlbar">
+                <i style="left:0.6%"></i>
+                <i style="left:7.4%"></i>
+                <i style="left:8.9%"></i>
+                <i style="left:9.6%"></i>
+                <i style="left:11.8%"></i>
+                <i style="left:13.1%"></i>
+                <i style="left:15.9%"></i>
+                <i style="left:16.7%"></i>
+                <i style="left:17.4%"></i>
+                <i style="left:20.2%"></i>
+                <i style="left:22.8%"></i>
+                <i style="left:23.6%"></i>
+                <i style="left:26.9%"></i>
+                <i style="left:29.1%"></i>
+                <i style="left:30.0%"></i>
+                <i style="left:33.4%"></i>
+                <i style="left:35.1%"></i>
+                <i style="left:35.9%"></i>
+                <i style="left:38.6%"></i>
+                <i style="left:41.9%"></i>
+                <i style="left:42.7%"></i>
+                <i style="left:45.2%"></i>
+                <i style="left:48.8%"></i>
+                <i style="left:49.6%"></i>
+                <i style="left:50.4%"></i>
+                <i style="left:53.7%"></i>
+                <i style="left:56.1%"></i>
+                <i style="left:56.9%"></i>
+                <i style="left:60.2%"></i>
+                <i style="left:61.0%"></i>
+                <i style="left:64.3%"></i>
+                <i style="left:67.1%"></i>
+                <i style="left:67.9%"></i>
+                <i style="left:71.2%"></i>
+                <i style="left:74.6%"></i>
+                <i style="left:75.4%"></i>
+                <i style="left:78.7%"></i>
+                <i style="left:82.1%"></i>
+                <i style="left:85.5%"></i>
+                <i style="left:86.3%"></i>
+                <i style="left:89.6%"></i>
+                <i style="left:93.0%"></i>
+                <i style="left:96.4%"></i>
+                <i style="left:97.2%"></i>
+              <i class="est" style="left:2.4%"></i>
+              <i class="est" style="left:3.8%"></i>
+              <i class="est" style="left:5.4%"></i>
+              </div>
+              <div class="tl-ends"><span>09:58</span><span>18:42</span></div>
+              <p class="tl-cap">Estimates land inside the camera-time range by construction. A Spread that lands outside would warn here.</p>
+            </div>
+
+            <div class="ann afwrap" data-ann="changed">
+              <p class="seclabel" style="margin:0">Affected files · 3 · <span style="text-transform:none;letter-spacing:0;color:var(--inkMute);font-weight:400">click a thumbnail to override</span></p>
+              <div class="grid3">
+                <div class="imgcard">
+                  <span class="ph"><span class="burn">----/--/-- --:--:--</span></span>
+                  <span class="fname">IMG_0042.JPG</span>
+                  <span class="est-time">2026-06-14 10:08:23 <span class="tag est">est.</span></span>
+                  <span class="est-how">between IMG_0041 and IMG_0043</span>
+                </div>
+                <div class="imgcard">
+                  <span class="ph"><span class="burn">----/--/-- --:--:--</span></span>
+                  <span class="fname">IMG_0129.JPG</span>
+                  <span class="est-time">2026-06-14 18:52:10 <span class="tag est">est.</span></span>
+                  <span class="est-how">10 min after IMG_0128 (last file)</span>
+                </div>
+                <div class="imgcard">
+                  <span class="ph"><span class="burn">----/--/-- --:--:--</span></span>
+                  <span class="fname">VID_0007.MP4</span>
+                  <span class="est-time">2026-06-14 10:30:00 <span class="tag manual">manual</span></span>
+                  <span class="est-how"><button class="xbtn">✕</button> back to estimate (10:24:35)</span>
+                </div>
+              </div>
+            </div>
+
+          <div class="actionrow">
+            <div>
+              <span class="ann ann-i cut" data-ann="lifted"><button class="btn solid">Continue</button></span>
+              <p class="btn-note">Continue to upload</p>
+              <p class="btn-note">Gate no longer blocks on capture time.</p>
+            </div>
+            <div>
+              <span class="flagbadge">timestamp_issues → true</span><span class="flagtail">while any file lacks a camera time</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="subcard">
+      <h4>Batch with no camera time at all <span class="after-only">With #82 only</span></h4>
+      <div class="app">
+        <div class="stack">
+          <div class="banner calm">No file in this batch has a camera capture time. File modified times were used for all 128 files, and the upload will be marked as having a known timestamp issue. Use Spread if the file dates are wrong too.</div>
+          <div class="cte-list">
+            <div class="cte-row">
+              <span class="cte-name">IMG_0001.JPG</span>
+              <span class="est-block">
+                <span class="est-time">2026-06-14 09:57:40 <span class="tag est">est.</span></span>
+                <span class="est-how">file modified time</span>
+              </span>
+              <input class="dtinput empty" type="text" placeholder="Override" />
+              <span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="caption">The panel keeps the sketch's shape: scope on the left, one operation at a time, a preview strip, thumbnails instead of rows. Interpolate is the automatic default; Spread is the override for a set that has no usable neighbours.</p>
+  </section>
+
+  <!-- ===================== SCREEN 3 ===================== -->
+  <section class="screen">
+    <h2>Screen 3 — Upload step, metadata preview</h2>
+    <p class="where">apps/sparcd-uploader · Upload.tsx → MetadataPreview.tsx</p>
+
+    <div class="cmp wide">
+      <div>
+        <div class="colhead">Today</div>
+        <div class="app">
+          <p class="csv-title">deployments.csv</p>
+          <div class="csv"><span class="h">… camera_heading,timestamp_issues,bait_use …</span>
+…,"0","false","",…</div>
+
+          <p class="csv-title">media.csv</p>
+          <div class="csv"><span class="h">media_id,deployment_id,…,timestamp,…,comments</span>
+…,"IMG_0041.JPG","","2026-06-14T10:02:11",…,"false",""
+…,"IMG_0042.JPG","","2026-06-14T10:30:00",…,"false",""</div>
+          <p class="csv-title">IMG_0042 carries whatever was typed in Assign; the gate never lets an empty cell through.</p>
+        </div>
+      </div>
+
+      <div>
+        <div class="colhead">With #82</div>
+        <div class="app">
+          <p class="csv-title">deployments.csv</p>
+          <div class="csv"><span class="h">… camera_heading,timestamp_issues,bait_use …</span>
+…,"0",<span class="ann ann-i right" data-ann="changed">"true"</span>,"",…</div>
+
+          <p class="csv-title">media.csv</p>
+          <div class="csv"><span class="h">media_id,deployment_id,…,timestamp,…,comments</span>
+…,"IMG_0041.JPG","","2026-06-14T10:02:11",…,"false",""
+…,"IMG_0042.JPG","","2026-06-14T10:08:23",…,"false",<span class="ann ann-i" data-ann="new">"[TIMESTAMP:interpolated]"</span></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="footnote">Marker uses the existing <span class="mono">[PREFIX:value]</span> convention from <span class="mono">observations.csv</span> comments. Values: <span class="mono">interpolated</span> · <span class="mono">offset</span> · <span class="mono">file-modified</span> · <span class="mono">spread</span> · <span class="mono">manual</span>. Any time the camera did not write gets one.</p>
+    <p class="caption">Three cells. Everything else in the bundle is byte-identical.</p>
+  </section>
+
+  <!-- ===================== SCREEN 4 ===================== -->
+  <section class="screen">
+    <h2>Screen 4 — Tagger, per-image capture time</h2>
+    <p class="where">apps/sparcd-tagger · PerImageTime.tsx (Focus view)</p>
+
+    <div class="cmp wide">
+      <div>
+        <div class="colhead">Today</div>
+        <div class="app">
+          <span class="pit-label">Capture time</span>
+          <div class="pit" style="margin-top:8px">
+            <span class="pit-time">2026-06-14 10:08:23</span>
+            <button class="pit-btn">Adjust time</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="colhead">With #82</div>
+        <div class="app">
+          <span class="pit-label">Capture time</span>
+          <div class="pit" style="margin-top:8px">
+            <span class="pit-time">2026-06-14 10:08:23</span>
+            <span class="ann ann-i" data-ann="new"><span class="tag badge">estimated</span></span>
+            <button class="pit-btn">Adjust time</button>
+          </div>
+          <p class="tip" style="margin-top:8px;max-width:52ch">Estimated by the uploader — the camera wrote no time. Set the real time here if you know it.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="caption">The tagger already has per-image override and upload-wide shift. The badge only tells the tagger which times the camera did not write.</p>
+  </section>
+
+  <!-- ===================== RECONCILIATION ===================== -->
+  <section class="screen">
+    <h2>Reconciled with the #8 sketch</h2>
+    <p class="where">docs · interface sketch 2026-08-01 vs the rule agreed in #27</p>
+
+    <p class="intro">The sketch predates Chris's rule in #27 by three weeks. The rule absorbed two of its three operations as automatic defaults; the rest is either already in the tagger or folded in above.</p>
+
+    <table class="rec">
+      <thead>
+        <tr><th>In the sketch</th><th>In this diff</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Interpolate (fill gaps from neighbours)</td><td>Automatic default (#82 rule). Nothing to enter.</td></tr>
+        <tr><td>Spread over window (start time + spacing, or file modified times)</td><td>Added as the override operation. File modified time is #82's no-reference fallback.</td></tr>
+        <tr><td>Anchor &amp; shift (true time of one image, everything moves)</td><td>Already in the tagger's time shift. Wrong-but-present times pass upload checks and only surface at review.</td></tr>
+        <tr><td>Apply-to scope by folder or by failure</td><td>Added. Folders come from the batch's relative paths.</td></tr>
+        <tr><td>Deployment-window timeline</td><td>Reduced to a camera-time range strip. The uploader has no deployment window independent of the media times.</td></tr>
+        <tr><td>Affected images grid with burn-in</td><td>Added as the review surface, replacing the per-row list of date pickers.</td></tr>
+        <tr><td>Publish locked until every image has a time</td><td>Replaced by the deployment flag. Upload completes; <span class="mono">timestamp_issues</span> stays true while any file lacks a camera time. Where that gets flipped is a tagger follow-up.</td></tr>
+        <tr><td>“draft — not published” badge</td><td>No draft state in the uploader; the flag plays that role downstream.</td></tr>
+        <tr><td>Same panel in the tagger</td><td>Follow-up issue.</td></tr>
+        <tr><td><span class="mono">deployments.timestampIssues</span> + <span class="mono">mediaComments</span> record</td><td>Kept: the flag plus the <span class="mono">[TIMESTAMP:…]</span> marker.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="note">
+    Out of scope for #82, tracked separately: reset-clock offsets (the tagger's time shift already covers this); the same panel inside the tagger; flagging files where only <span class="mono">ModifyDate</span> was available.
+  </footer>
+
+</div>
+</body>
+</html>

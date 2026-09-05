@@ -166,7 +166,7 @@ export function History() {
       generation: number,
     ) => {
       if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
-      const result = await ensureBundle(batch, session, resolved);
+      const result = await ensureBundle(batch, session, resolved, attached);
       if (!ownsPreparation(batch.id, expectedConnectionId, generation)) return;
       if (!result.ok) {
         setProblems([...probs, ...result.problems]);

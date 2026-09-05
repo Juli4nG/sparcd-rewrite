@@ -142,9 +142,10 @@ describe('uploader bundle is valid v016 Camtrap data', () => {
     expect(rows[0].mimeType).toBe('video/mp4');
   });
 
-  it('a file with no capture time leaves col 4 empty', async () => {
+  it('a file with no camera time receives an estimated capture time', async () => {
     const b = await build([ready('a/CLIP.MP4', { mediaKind: 'video', exifNaive: undefined })]);
-    expect(parseMedia(b.mediaCsv)[0].timestamp).toBe('');
+    expect(parseMedia(b.mediaCsv)[0].timestamp).toBe(b.items[0].captureTimestamp);
+    expect(parseMedia(b.mediaCsv)[0].comments).toBe('[TIMESTAMP:file-modified]');
   });
 
   it('a manual capture time fills col 4 (DST-corrected) when EXIF is absent', async () => {
@@ -449,5 +450,32 @@ describe('a batch tagged before upload publishes its species', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].observationId).toBe('IMG001.JPG:0');
     expect(rows[0].scientificName).toBe('');
+  });
+});
+
+describe('timestamp issues', () => {
+  it('flags estimated, manual and spread times while camera rows stay blank', async () => {
+    const b = await build([
+      ready('1'), ready('2', { exifNaive: undefined }), ready('3'),
+      ready('4', { exifNaive: undefined, manualNaive: naive() }),
+      { ...ready('5', { exifNaive: undefined, manualNaive: naive() }), manualSource: 'spread' },
+    ]);
+    expect(parseCsvRows(b.deploymentsCsv)[0][15]).toBe('true');
+    expect(parseCsvRows(b.mediaCsv).map((r) => r[10])).toEqual([
+      '', '[TIMESTAMP:interpolated]', '', '[TIMESTAMP:manual]', '[TIMESTAMP:spread]',
+    ]);
+    expect(b.items.every((i) => !!i.captureTimestamp)).toBe(true);
+    const resumed = await buildBundleFromRecords({
+      location: SAN15, collectionUuid: UUID, bucket: `sparcd-${UUID}`, uploaderSlug: 'jdoe',
+      description: '', uploadPath: b.uploadPath, startedAt: new Date(),
+      files: b.items.map((i) => ({ ...i, remoteKey: i.key })),
+    });
+    expect(resumed.mediaCsv).toBe(b.mediaCsv);
+    expect(resumed.deploymentsCsv).toBe(b.deploymentsCsv);
+  });
+  it('does not flag camera timestamps', async () => {
+    const b = await build([ready('1')]);
+    expect(parseCsvRows(b.deploymentsCsv)[0][15]).toBe('false');
+    expect(parseCsvRows(b.mediaCsv)[0][10]).toBe('');
   });
 });

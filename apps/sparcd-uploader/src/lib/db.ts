@@ -76,6 +76,7 @@ export interface FileRecord {
   sanitizedObjectName?: string; // resolved object name (post-collision), key tail
   remoteKey?: string; // full key = uploadPrefix/sanitizedObjectName (= media_path)
   sha256?: string;
+  timestampSource?: import('@sparcd/camtrap').TimestampSource;
   captureTimestamp?: string; // resolved naive-UTC capture time (post-tz), media.csv col 4
   exifCamera?: string;
   mediaKind?: MediaKind;

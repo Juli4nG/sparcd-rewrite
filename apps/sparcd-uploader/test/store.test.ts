@@ -383,3 +383,19 @@ describe('store applyProgress', () => {
     30_000,
   );
 });
+
+it('sets and clears manual sources, and applies a spread in one store update', () => {
+  useStore.getState().setFiles([scanned('a'), scanned('b')]);
+  const state = useStore.getState();
+  state.setManualNaive('a', NAIVE);
+  expect(useStore.getState().files[0].manualSource).toBe('manual');
+  const listener = vi.fn();
+  const unsubscribe = useStore.subscribe(listener);
+  state.setManualNaiveMany([{ id: 'a', naive: NAIVE }, { id: 'b', naive: NAIVE }], 'spread');
+  expect(listener).toHaveBeenCalledTimes(1);
+  unsubscribe();
+  expect(useStore.getState().files.every((f) => f.manualSource === 'spread' && f.manualNaive === NAIVE)).toBe(true);
+  state.setManualNaive('a', null);
+  expect(useStore.getState().files[0].manualNaive).toBeUndefined();
+  expect(useStore.getState().files[0].manualSource).toBeUndefined();
+});

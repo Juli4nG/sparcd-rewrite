@@ -36,6 +36,8 @@
 // target — either the manual setting (readable mid-run) or the adaptive
 // controller, which searches for the throughput knee and then holds it.
 
+import { processingComplete } from './validation';
+import { estimateCaptureTimes } from './estimateCaptureTime';
 import type { S3Config } from '@sparcd/types';
 import { PreconditionFailedError } from '@sparcd/s3-safe';
 import { getClient } from './s3';
@@ -280,6 +282,7 @@ const fileRecordFor = (sessionId: string, it: UploadItem, state: FileRecord['sta
   size: it.size,
   sha256: it.sha256,
   captureTimestamp: it.captureTimestamp,
+  timestampSource: it.timestampSource,
   mediaKind: it.mediaKind,
   mimeType: it.mimeType,
   state,
@@ -1116,6 +1119,7 @@ export function runStreamingUpload(
     files: build.files,
   });
 
+  let estimates = processingComplete(build.files) ? estimateCaptureTimes(build.files, build.timeZone) : undefined;
   const queue = makeAsyncQueue<PlanItem>();
   const enqueuedIds = new Set<string>();
   let finalFiles: FileEntry[] | null = null;
@@ -1125,8 +1129,9 @@ export function runStreamingUpload(
   // a single update instead of one per file.
   const enqueue = (f: FileEntry, opts: { silent?: boolean } = {}): boolean => {
     if (f.processState !== 'ready' || !f.sha256 || enqueuedIds.has(f.id)) return false;
+    if (!estimates && !f.exifNaive && !f.manualNaive) return false;
     enqueuedIds.add(f.id);
-    const item = planItemFor(f, naming, build.timeZone);
+    const item = planItemFor(f, naming, build.timeZone, estimates ?? new Map());
     queue.push({ ...item, doneAlready: false });
     // Flip the display row the moment a file is actually queued, not when a
     // lane eventually dequeues it — the queue is FIFO and only `concurrency`
@@ -1169,8 +1174,8 @@ export function runStreamingUpload(
       dirHandle: params.dirHandle ?? undefined,
     };
     const initialRecords = build.files.map((f) =>
-      f.processState === 'ready' && f.sha256
-        ? fileRecordFor(sessionId, planItemFor(f, naming, build.timeZone), 'pending')
+      f.processState === 'ready' && f.sha256 && (estimates || f.exifNaive || f.manualNaive)
+        ? fileRecordFor(sessionId, planItemFor(f, naming, build.timeZone, estimates ?? new Map()), 'pending')
         : awaitingFileRecordFor(sessionId, f),
     );
     runner.log('info', `saving resume ledger (${initialRecords.length} files)…`);
@@ -1253,6 +1258,7 @@ export function runStreamingUpload(
     },
     close: (files) => {
       finalFiles = files;
+      estimates ??= estimateCaptureTimes(files, build.timeZone);
       // Last sweep for a ready file whose `notifyReady` never arrived — the
       // bridge from Inspect is an event subscription, and a file it missed
       // would be left out of the transfer while still appearing in the CSVs.

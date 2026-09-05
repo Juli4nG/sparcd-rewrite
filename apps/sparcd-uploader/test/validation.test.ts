@@ -1,7 +1,7 @@
 // Per-file inspect-step verdicts and the batch-ready gate.
 
 import { describe, it, expect } from 'vitest';
-import { validateBatch, summarize, captureTimeComplete, processingComplete } from '../src/lib/validation';
+import { validateBatch, summarize, processingComplete } from '../src/lib/validation';
 import type { FileEntry } from '../src/store';
 import type { NaiveDateTime } from '../src/lib/exifTime';
 
@@ -48,7 +48,7 @@ describe('validateBatch severities', () => {
   it('warns (not blocks) when a ready file has no capture time', () => {
     const v = validateBatch([file({ id: 'a', relPath: 'a', exifNaive: undefined })]);
     expect(v['a'].severity).toBe('warning');
-    expect(v['a'].issues.some((i) => i.message.includes('No capture time'))).toBe(true);
+    expect(v['a'].issues[0].message).toBe('No camera time — estimated from neighbouring files, marked as a known timestamp issue');
   });
 
   it('warns when a ready video has no container timestamp (manual-entry path)', () => {
@@ -62,13 +62,13 @@ describe('validateBatch severities', () => {
       }),
     ]);
     expect(v['a'].severity).toBe('warning');
-    expect(v['a'].issues.some((i) => i.message.includes('No capture time'))).toBe(true);
+    expect(v['a'].issues[0].message).toBe('No camera time — estimated from neighbouring files, marked as a known timestamp issue');
   });
 
-  it('a manual capture time satisfies the check (ok, no capture-time issue)', () => {
+  it('a manual capture time remains a known timestamp issue', () => {
     const v = validateBatch([file({ id: 'a', relPath: 'a', exifNaive: undefined, manualNaive: NAIVE })]);
-    expect(v['a'].severity).toBe('ok');
-    expect(v['a'].issues.some((i) => i.message.includes('No capture time'))).toBe(false);
+    expect(v['a'].severity).toBe('warning');
+    expect(v['a'].issues[0].message).toBe('No camera time — set by hand, marked as a known timestamp issue');
   });
 
   it('a ready video with a container timestamp is ok', () => {
@@ -129,31 +129,12 @@ describe('summarize / ready gate', () => {
     const s = summarize(files, validateBatch(files));
     expect(s.warnings).toBe(1);
     expect(s.errors).toBe(0);
-    expect(s.ready).toBe(true); // inspect no longer hard-blocks on missing time
+    expect(s.ready).toBe(true);
+    expect(s.noCameraTime).toBe(1);
   });
 
   it('an empty batch is never ready', () => {
     expect(summarize([], {}).ready).toBe(false);
-  });
-});
-
-describe('captureTimeComplete', () => {
-  it('is false when a ready file has neither EXIF nor a manual time', () => {
-    const files = [file({ id: 'a', relPath: 'a' }), file({ id: 'b', relPath: 'b', exifNaive: undefined })];
-    expect(captureTimeComplete(files)).toBe(false);
-  });
-
-  it('is true when every ready file has an EXIF or manual time', () => {
-    const files = [
-      file({ id: 'a', relPath: 'a' }),
-      file({ id: 'b', relPath: 'b', exifNaive: undefined, manualNaive: NAIVE }),
-    ];
-    expect(captureTimeComplete(files)).toBe(true);
-  });
-
-  it('ignores non-ready files (still processing / errored)', () => {
-    const files = [file({ id: 'a', relPath: 'a', processState: 'processing', exifNaive: undefined })];
-    expect(captureTimeComplete(files)).toBe(true);
   });
 });
 

@@ -22,6 +22,7 @@ import {
 import { useStore, type FileEntry } from '../store';
 import { restoreFromHandleTrusted } from './resume';
 import { formatNaive } from './exifTime';
+import { estimateCaptureTimes, type CaptureEstimate } from './estimateCaptureTime';
 import { taggerBatchUrl, uploaderReturnUrl } from './siblings';
 
 /** The flip id on this page load, if the tagger just sent the user back. */
@@ -34,7 +35,7 @@ export const returningFlipId = (): string | null =>
 // worker's own sniff and lands in media.csv — drop it and `mimeFor` falls back
 // to the extension, so a batch that went through the tagger would publish
 // different bytes from the same batch uploaded straight through.
-const toFlipFile = (f: FileEntry): FlipFile => ({
+const toFlipFile = (f: FileEntry, estimate: CaptureEstimate | undefined): FlipFile => ({
   relPath: f.relPath,
   fileName: f.fileName,
   size: f.size,
@@ -46,6 +47,8 @@ const toFlipFile = (f: FileEntry): FlipFile => ({
   // would bring a manual entry home disguised as EXIF.
   exifTimestamp: f.exifNaive ? formatNaive(f.exifNaive) : undefined,
   manualTimestamp: f.manualNaive ? formatNaive(f.manualNaive) : undefined,
+  estimatedTimestamp: estimate ? formatNaive(estimate.naive) : undefined,
+  timestampSource: f.exifNaive ? undefined : f.manualNaive ? f.manualSource ?? 'manual' : estimate?.method,
   mimeType: f.mimeType,
   exifCamera: f.exifCamera,
   gps: f.gps,
@@ -63,13 +66,14 @@ const toFlipFile = (f: FileEntry): FlipFile => ({
 export async function handOffToTagger(): Promise<void> {
   const s = useStore.getState();
   const id = newFlipId();
+  const estimates = estimateCaptureTimes(s.files, s.uploadTimeZone);
   await writeFlipRecord({
     id,
     v: 1,
     createdAt: new Date().toISOString(),
     returnUrl: uploaderReturnUrl(id),
     dirHandle: s.dirHandle ?? undefined,
-    files: s.files.filter((f) => f.processState === 'ready' && f.sha256).map(toFlipFile),
+    files: s.files.filter((f) => f.processState === 'ready' && f.sha256).map((f) => toFlipFile(f, estimates.get(f.id))),
     tags: {},
   });
   window.location.href = taggerBatchUrl(id);
@@ -91,6 +95,7 @@ const toFileEntry = (f: FlipFile, file: File, record: FlipRecord): FileEntry => 
   sha256: f.sha256,
   exifNaive: parseNaive(f.exifTimestamp),
   manualNaive: parseNaive(f.manualTimestamp),
+  manualSource: f.timestampSource === 'manual' || f.timestampSource === 'spread' ? f.timestampSource : undefined,
   mimeType: f.mimeType,
   exifCamera: f.exifCamera,
   gps: f.gps,

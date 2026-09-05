@@ -31,7 +31,9 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     // The dev-only endpoint prefill would otherwise override the "remembered
-    // from the previous connection" prefill these scenarios assert on.
-    env: { VITE_SPARCD_S3_ENDPOINT: '' },
+    // from the previous connection" prefill these scenarios assert on, and a
+    // developer's local write-scope guard would refuse every PUT the mock
+    // bucket takes — both live in a gitignored .env, so pin them here.
+    env: { VITE_SPARCD_S3_ENDPOINT: '', VITE_SPARCD_S3_WRITE_SCOPE: '*' },
   },
 });

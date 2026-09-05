@@ -27,7 +27,8 @@ import {
 } from './scanFiles';
 import { processBatch, type ProcessResponse } from './processPool';
 import { namingForUploadPath, objectKeyFor, buildBundleFromRecords, type ResolvedFileRecord } from './bundle';
-import { naiveInZoneToUtcIso } from './exifTime';
+import { naiveInZoneToUtcIso, partsInZone } from './exifTime';
+import { estimateCaptureTimes, type EstimateInput } from './estimateCaptureTime';
 
 export type RestoreOk = {
   ok: true;
@@ -289,18 +290,17 @@ export type EnsureBundleResult = { ok: true } | { ok: false; problems: Reconcile
  * record metadata alone (actual blob bytes are only needed later, when
  * `resumeUpload` itself streams them).
  *
- * A record whose fresh hash failed, or whose only capture-time source was a
- * manual Assign entry (not persisted for a file that never finished Inspect,
- * so unrecoverable here), surfaces as a blocking problem instead of silently
- * publishing incomplete metadata. A record that already finished Inspect gets
- * the same capture-time check against its already-persisted value — it has
- * nothing left to resolve, but an empty timestamp is exactly as fatal to a
- * published batch regardless of which state left it that way.
+ * A record whose fresh hash failed surfaces as a blocking problem instead of
+ * silently publishing incomplete metadata. A capture time the camera never
+ * wrote is not a blocker: a record that already carries one keeps it (with the
+ * source it was published under), and anything still without one is estimated
+ * from the batch's camera times exactly as a fresh upload would.
  */
 export async function ensureBundle(
   batch: BatchRecord,
   session: { bundle: unknown; files: FileRecord[] },
   resolved: Map<string, ProcessResponse>,
+  attached: Map<string, File>,
 ): Promise<EnsureBundleResult> {
   if (session.bundle) return { ok: true };
 
@@ -309,38 +309,66 @@ export async function ensureBundle(
     session.files.map((f) => ({ id: f.localPath, relPath: f.localPath, fileName: f.fileName })),
   );
 
+  const timeZone = batch.uploadTimeZone;
   const problems: ReconcileProblem[] = [];
-  const updated: FileRecord[] = [];
+  const inspected = new Map<string, ProcessResponse>();
 
   for (const rec of session.files) {
-    if (rec.state !== 'awaiting-processing') {
-      // Already finished Inspect in the original run — nothing to resolve,
-      // but its persisted capture time still has to be non-empty, or a
-      // published batch would carry a blank timestamp column for it.
-      if (!rec.captureTimestamp) {
-        problems.push({
-          localPath: rec.localPath,
-          fileName: rec.fileName,
-          reason: 'no capture time — a manual entry made before the interruption cannot be recovered here',
-        });
-      }
-      continue;
-    }
+    if (rec.state !== 'awaiting-processing') continue;
     const r = resolved.get(rec.localPath);
     if (!r || !r.sha256) {
       problems.push({ localPath: rec.localPath, fileName: rec.fileName, reason: 'could not be inspected' });
       continue;
     }
-    const captureTimestamp = r.exifNaive ? naiveInZoneToUtcIso(r.exifNaive, batch.uploadTimeZone) : '';
-    if (!captureTimestamp) {
-      problems.push({
-        localPath: rec.localPath,
-        fileName: rec.fileName,
-        reason: 'no capture time — a manual entry made before the interruption cannot be recovered here',
+    inspected.set(rec.localPath, r);
+  }
+  if (problems.length > 0) return { ok: false, problems };
+
+  // Only the rows this pass just hashed can need a time: a row that already
+  // carries one keeps it, so it is never an estimation candidate — which
+  // matters because History lets an already-uploaded file be missing from the
+  // folder, and estimating it would reach for source bytes that are gone. A
+  // row the camera timed still rides along as a reference so its neighbours
+  // interpolate against it, with the wall-clock recovered from the UTC time it
+  // was published under.
+  const estimateInputs: EstimateInput[] = [];
+  for (const rec of session.files) {
+    const fresh = inspected.get(rec.localPath);
+    if (fresh) {
+      estimateInputs.push({
+        id: rec.localPath,
+        relPath: rec.localPath,
+        processState: 'ready',
+        exifNaive: fresh.exifNaive,
+        file: attached.get(rec.localPath)!,
       });
-      continue;
+    } else if (rec.captureTimestamp && !rec.timestampSource) {
+      estimateInputs.push({
+        id: rec.localPath,
+        relPath: rec.localPath,
+        processState: 'ready',
+        exifNaive: partsInZone(Date.parse(rec.captureTimestamp), timeZone),
+        // A reference carries a camera time, so it can never reach the
+        // file-modified fallback — and its source file may be long gone.
+        file: { lastModified: 0 },
+      });
     }
-    const { objectName, key } = objectKeyFor(rec.localPath, r.sha256, naming);
+  }
+  const estimates = estimateCaptureTimes(estimateInputs, timeZone);
+
+  const timeFor = (rec: FileRecord): Pick<FileRecord, 'captureTimestamp' | 'timestampSource'> => {
+    const exifNaive = inspected.get(rec.localPath)?.exifNaive;
+    if (exifNaive) return { captureTimestamp: naiveInZoneToUtcIso(exifNaive, timeZone) };
+    if (rec.captureTimestamp) return { captureTimestamp: rec.captureTimestamp, timestampSource: rec.timestampSource };
+    const estimate = estimates.get(rec.localPath)!;
+    return { captureTimestamp: naiveInZoneToUtcIso(estimate.naive, timeZone), timestampSource: estimate.method };
+  };
+
+  const updated: FileRecord[] = [];
+  for (const rec of session.files) {
+    const r = inspected.get(rec.localPath);
+    if (!r) continue;
+    const { objectName, key } = objectKeyFor(rec.localPath, r.sha256!, naming);
     updated.push({
       ...rec,
       state: 'pending',
@@ -348,14 +376,13 @@ export async function ensureBundle(
       relPathInBundle: objectName,
       remoteKey: key,
       sha256: r.sha256,
-      captureTimestamp,
+      ...timeFor(rec),
       exifCamera: r.exifCamera,
       mediaKind: r.mediaKind,
       mimeType: r.mimeType,
     });
   }
 
-  if (problems.length > 0) return { ok: false, problems };
   if (updated.length > 0) await updateFileRecords(updated);
 
   const byLocalPath = new Map(updated.map((r) => [r.localPath, r]));
@@ -366,7 +393,7 @@ export async function ensureBundle(
       size: r.size,
       sha256: r.sha256!,
       remoteKey: r.remoteKey!,
-      captureTimestamp: r.captureTimestamp,
+      ...timeFor(rec),
       mimeType: r.mimeType,
       preTags: r.preTags,
     };

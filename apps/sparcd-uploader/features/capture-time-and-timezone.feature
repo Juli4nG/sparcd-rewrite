@@ -1,4 +1,4 @@
-# DRAFT — for review, not yet agreed. Generated 2026-08-06 from apps/sparcd-uploader (src/sections/Assign.tsx, src/components/CaptureTimeEditor.tsx, src/lib/exifTime.ts, src/lib/coords.ts, src/lib/bundle.ts, test/exifTime.test.ts, test/bundle.test.ts).
+# DRAFT — for review, not yet agreed. Generated 2026-09-05 from apps/sparcd-uploader (src/sections/Assign.tsx, src/components/CaptureTimeEditor.tsx, src/lib/exifTime.ts, src/lib/estimateCaptureTime.ts, src/lib/spreadCaptureTimes.ts, src/lib/coords.ts, src/lib/bundle.ts, test/exifTime.test.ts, test/estimateCaptureTime.test.ts, test/bundle.test.ts).
 
 @unmapped
 Feature: Establish the true capture time of every file
@@ -6,9 +6,10 @@ Feature: Establish the true capture time of every file
   """
   As-built flow: a camera writes a wall-clock time with no timezone, so the same
   written time means a different instant depending on where the camera stands.
-  The uploader records which timezone to read those times in, defaults it from
-  the chosen camera location, and requires a time for every file before the
-  batch can be published.
+  The uploader records which timezone to read those times in, and defaults it
+  from the chosen camera location. When a camera wrote no time at all, the
+  uploader estimates one from the files around it rather than asking for it —
+  and marks the upload, and each such file, as carrying a known timestamp issue.
   """
 
   Background:
@@ -46,39 +47,51 @@ Feature: Establish the true capture time of every file
     And the stored time does not depend on the timezone of the machine uploading
 
   @unmapped
-  Scenario: Files with no camera capture time are collected for manual entry
+  Scenario: A file with no camera time is given the time between its neighbours
     Given some examined files carry no camera capture time
-    Then the Assign step lists exactly those files with a time field each
-    And it states how many of them still have no time
+    Then each of them already shows an estimated time, marked as an estimate
+    And a file between two timestamped files sits midway between them
 
   @unmapped
-  Scenario: One time can be applied to every file still missing one
-    Given several files are still missing a capture time
-    When a time is entered once and applied in bulk
-    Then every file that had no time receives it
-    And files that already had a time keep the one they had
+  Scenario: The first and last files are placed ten minutes past their only neighbour
+    Given the batch begins and ends with a file carrying no camera time
+    Then the first file sits ten minutes before the earliest camera time
+    And the last file sits ten minutes after the latest camera time
 
   @unmapped
-  Scenario: A camera-supplied time is never replaced by a manually entered one
-    Given a file whose camera wrote a capture time
-    Then it is not offered for manual entry
-    And the camera's time is what gets stored
+  Scenario: A batch with no camera time at all falls back to file modified times
+    Given no file in the batch carries a camera capture time
+    Then every file takes the time its file was last modified
+    And the panel says so, and offers to spread the times instead
 
   @unmapped
-  Scenario: A manually entered time can be cleared
-    When a manually entered time is cleared
-    Then that file counts again as missing a capture time
-    And the batch cannot be published until it is given one
+  Scenario: An estimate can be overridden by hand and cleared back
+    Given some examined files carry no camera capture time
+    When a time is typed over one file's estimate
+    Then that file shows the typed time as entered by hand
+    And clearing it returns the file to its estimate
 
   @unmapped
-  Scenario: An impossible date is refused
+  Scenario: A selection can be spread from a start time
+    Given some examined files carry no camera capture time
+    When a start time and a spacing are applied to the selection
+    Then the files land at that start time, one spacing apart, in filename order
+    And each of them is marked as spread
+
+  @unmapped
+  Scenario: An impossible date is refused as an override
     When a date that does not exist is entered, such as 31 February
-    Then it is not accepted as a capture time
-    # Refusing it matters because a nonexistent date would otherwise be silently
-    # shifted to a real one and published as the authoritative capture time.
+    Then the file keeps the estimate it already had
 
   @unmapped
-  Scenario: A published batch never carries an empty capture time
-    Given every examined file has either a camera time or a manual one
+  Scenario: Every time the camera did not write is marked as a known issue
+    Given some examined files carry no camera capture time
     When the batch is published
-    Then every media row carries a capture time
+    Then the deployment is flagged as having a timestamp issue
+    And each file whose time the camera did not write carries a marker saying where it came from
+    And files the camera did time carry no marker
+
+  @unmapped
+  Scenario: Upload is never blocked by a missing capture time
+    Given some examined files carry no camera capture time
+    Then the batch can be published without anyone entering a time

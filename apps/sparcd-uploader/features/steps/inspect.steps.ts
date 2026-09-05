@@ -134,13 +134,13 @@ Given('a file carries no camera capture time', async ({ app }) => {
 Then('it is shown as a warning at Inspect', async ({ app }) => {
   const row = (await app.listedFiles()).find((r) => r.name === 'IMG_NOTIME.JPG')!;
   expect(row.status).toBe('Warning');
-  expect(row.issues).toContain('No capture time');
+  expect(row.issues).toContain('No camera time');
 });
 
-Then('the batch can still continue to the Assign step, where a time is entered', async ({ app }) => {
+Then('the batch can still continue to the Assign step, where the estimate can be overridden', async ({ app }) => {
   await expect(app.continueButton()).toBeEnabled();
   await app.continueToAssign();
-  await expect(app.page.getByRole('heading', { name: 'Capture time' })).toBeVisible();
+  await expect(app.page.getByRole('heading', { name: 'Capture times' })).toBeVisible();
 });
 
 Given('two files in the batch have identical contents', async ({ app }) => {

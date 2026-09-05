@@ -9,7 +9,9 @@ import {
   parseObservations,
   commonNameFromComments,
   requestedSpeciesFromComments,
+  timestampSourceFromComments,
   type Observation,
+  type TimestampSource,
 } from '@sparcd/camtrap';
 import type { DraftObservation } from './db';
 
@@ -25,6 +27,9 @@ export type TagImage = {
   fileName: string;
   deploymentId: string;
   baseTimestamp: string; // media col 4, ISO
+  /** Where col 4 came from when the camera wrote no time — the uploader's
+   *  `[TIMESTAMP:…]` marker in media col 10. Absent for a camera-written time. */
+  timestampSource?: TimestampSource;
   baseObservations: DraftObservation[]; // ALL canonical observation rows, in CSV order
   /** Known for a local batch, where the uploader's worker sniffed the bytes.
    *  Absent for a canonical record, whose `media.csv` gives us only the key. */
@@ -66,6 +71,7 @@ export function buildTagImages(bundle: CanonicalBundle): TagImage[] {
       fileName: m.fileName || (m.mediaId.split('/').pop() ?? m.mediaId),
       deploymentId: m.deploymentId,
       baseTimestamp: m.timestamp,
+      timestampSource: timestampSourceFromComments(m.comments ?? '') ?? undefined,
       baseObservations: (obsByMedia.get(m.mediaId) ?? []).filter((o) => o.observationType === 'animal').map((o) => ({
         scientificName: o.scientificName,
         commonName: commonNameFromComments(o.tags) ?? '',

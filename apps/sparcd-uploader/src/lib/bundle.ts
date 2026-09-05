@@ -8,7 +8,7 @@
 // `Collections/<uuid>/Uploads/<stamp>_<slug>/<relpath>` — not a separate
 // UploadBlobs key. See plan "Persistence — S3 sync".
 
-import type { Media, Observation } from '@sparcd/camtrap';
+import type { Media, Observation, TimestampSource } from '@sparcd/camtrap';
 import {
   serializeDeployments,
   serializeMedia,
@@ -18,6 +18,7 @@ import {
   serializeUploadComplete,
   uploadStamp,
   buildObservationComments,
+  buildMediaComments,
   hasSpeciesPresent,
   parseTagMarkers,
   defaultObservationId,
@@ -27,6 +28,7 @@ import type { FlipObservation } from '@sparcd/flip';
 import { locationToDeployment, type Location } from './locations';
 import { sanitizeRelPath, nameCounts, resolveOneName } from './normalize';
 import { naiveInZoneToUtcIso } from './exifTime';
+import { estimateCaptureTimes, type CaptureEstimate } from './estimateCaptureTime';
 import type { MediaKind } from './scanFiles';
 import type { FileEntry } from '../store';
 
@@ -40,6 +42,7 @@ export type UploadItem = {
   file: File;
   size: number;
   sha256: string;
+  timestampSource?: TimestampSource;
   captureTimestamp?: string; // resolved ISO 8601 UTC capture time (post-tz), media.csv col 4
   mediaKind: MediaKind;
   mimeType: string;
@@ -179,21 +182,15 @@ export function objectKeyFor(
 const mimeFor = (f: FileEntry): string =>
   f.mimeType ?? (f.mediaKind === 'video' ? 'video/mp4' : 'image/jpeg');
 
-// Resolve a naive capture time to the DST-correct UTC naive wall-clock, the
-// exact media.csv col-4 byte shape. EXIF (or video container) metadata wins;
-// a manual Assign entry fills the gap for a file that has none.
-const captureFor = (f: FileEntry, timeZone: string): string => {
-  const src = f.exifNaive ?? f.manualNaive;
-  return src ? naiveInZoneToUtcIso(src, timeZone) : '';
-};
-
 /**
  * Resolve one ready file's full upload item — key, capture time, mime type —
  * against a frozen `BatchNaming`. Used both by `buildBundle`'s final pass
  * (over the complete ready set) and by a streamed run enqueueing one file the
  * moment it individually finishes Inspect.
  */
-export function planItemFor(f: FileEntry, naming: BatchNaming, timeZone: string): UploadItem {
+export function planItemFor(f: FileEntry, naming: BatchNaming, timeZone: string, estimates: Map<string, CaptureEstimate>): UploadItem {
+  const estimate = estimates.get(f.id);
+  const naive = f.exifNaive ?? f.manualNaive ?? estimate!.naive;
   const { objectName, key } = objectKeyFor(f.id, f.sha256!, naming);
   return {
     id: f.id,
@@ -204,7 +201,8 @@ export function planItemFor(f: FileEntry, naming: BatchNaming, timeZone: string)
     file: f.file,
     size: f.size,
     sha256: f.sha256!,
-    captureTimestamp: captureFor(f, timeZone) || undefined,
+    captureTimestamp: naiveInZoneToUtcIso(naive, timeZone),
+    timestampSource: f.exifNaive ? undefined : f.manualNaive ? f.manualSource ?? 'manual' : estimate!.method,
     mediaKind: f.mediaKind,
     mimeType: mimeFor(f),
     preTags: f.preTags,
@@ -249,9 +247,9 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
 
   // Resolve each file's key/capture-time/mime-type once (per-file work isn't
   // free), then project into media rows, observation rows, and upload items.
-  // Publish is gated on every ready file having a capture time, so col 4 is
-  // never empty for a published batch.
-  const uploadItems: UploadItem[] = ready.map((f) => planItemFor(f, naming, timeZone));
+  const estimates = estimateCaptureTimes(files, timeZone);
+  const uploadItems: UploadItem[] = ready.map((f) => planItemFor(f, naming, timeZone, estimates));
+  deployment.timestampIssues = uploadItems.some((it) => !!it.timestampSource);
 
   const media: Media[] = uploadItems.map((it) => ({
     mediaId: it.key,
@@ -260,6 +258,7 @@ export async function buildBundle(input: BuildInput): Promise<BundlePreview> {
     fileName: it.fileName,
     timestamp: it.captureTimestamp ?? '',
     mimeType: it.mimeType,
+    comments: buildMediaComments({ timestampSource: it.timestampSource }),
   }));
 
   // A batch that came back from the tagger already carrying species publishes
@@ -351,6 +350,7 @@ export type ResolvedFileRecord = {
   size: number;
   sha256: string;
   remoteKey: string;
+  timestampSource?: TimestampSource;
   captureTimestamp?: string;
   mimeType?: string;
   preTags?: FlipObservation[];
@@ -387,6 +387,7 @@ export async function buildBundleFromRecords(input: {
   const { location, collectionUuid, bucket, uploaderSlug, description, uploadPath, startedAt, files } = input;
   const deployment = locationToDeployment(location, collectionUuid);
 
+  deployment.timestampIssues = files.some((f) => !!f.timestampSource);
   const media: Media[] = files.map((f) => ({
     mediaId: f.remoteKey,
     deploymentId: deployment.deploymentId,
@@ -394,6 +395,7 @@ export async function buildBundleFromRecords(input: {
     fileName: f.fileName,
     timestamp: f.captureTimestamp ?? '',
     mimeType: f.mimeType ?? 'application/octet-stream',
+    comments: buildMediaComments({ timestampSource: f.timestampSource }),
   }));
 
   // A resumed-before-bundle batch's observations.csv must publish the same

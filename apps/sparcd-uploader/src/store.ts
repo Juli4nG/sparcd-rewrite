@@ -18,7 +18,6 @@ import type { FileAccessMode, LoadedSession } from './lib/db';
 import type { ReconcileProblem } from './lib/resume';
 import type { UploadRun, StreamingUploadRun, UploadSnapshot } from './lib/upload';
 import {
-  captureTimeComplete,
   processingComplete,
   validateBatch,
   validateFile,
@@ -48,6 +47,7 @@ export type FileEntry = ScannedFile & {
   processState: ProcessState;
   sha256?: string;
   exifNaive?: NaiveDateTime; // naive wall-clock components, no zone
+  manualSource?: 'manual' | 'spread';
   manualNaive?: NaiveDateTime; // user-entered wall-clock for files with no EXIF/container time
   exifCamera?: string;
   gps?: { lat: number; lon: number };
@@ -150,7 +150,8 @@ type UploaderState = {
   revalidate: () => void;
   setThumbnail: (id: string, thumbnail: Blob) => void;
   removeFile: (id: string) => void;
-  setManualNaive: (id: string, naive: NaiveDateTime | null) => void;
+  setManualNaive: (id: string, naive: NaiveDateTime | null, source?: 'manual' | 'spread') => void;
+  setManualNaiveMany: (entries: { id: string; naive: NaiveDateTime }[], source: 'manual' | 'spread') => void;
   resetBatch: () => void;
   setUploaderUser: (value: string) => void;
   setSelectedLocationKey: (key: string | null) => void;
@@ -371,7 +372,7 @@ export const useStore = create<UploaderState>()(
       closeStreamingQueue: (files) => {
         const { streamingRun, streamingQueueClosed } = get();
         if (!streamingRun || streamingQueueClosed) return;
-        if (!processingComplete(files) || !captureTimeComplete(files)) return;
+        if (!processingComplete(files)) return;
         // Latch before invoking close(): its queue can settle synchronously and
         // publish another store update, which must not close the run twice.
         set({ streamingQueueClosed: true });
@@ -542,11 +543,19 @@ export const useStore = create<UploaderState>()(
       // Manual capture time for a file with no EXIF/container time. Stored as raw
       // naive components (like exifNaive) so it's interpreted in the upload zone
       // at bundle build; null clears it and re-surfaces the file as unset.
-      setManualNaive: (id, naive) =>
+      setManualNaive: (id, naive, source = 'manual') =>
         set((s) => {
           const files = s.files.map((f) =>
-            f.id === id ? { ...f, manualNaive: naive ?? undefined } : f,
+            f.id === id ? { ...f, manualNaive: naive ?? undefined, manualSource: naive ? source : undefined } : f,
           );
+          return { files, validations: validateBatch(files) };
+        }),
+
+      setManualNaiveMany: (entries, source) =>
+        set((s) => {
+          const byId = new Map(entries.map((e) => [e.id, e.naive]));
+          const files = s.files.map((f) => byId.has(f.id)
+            ? { ...f, manualNaive: byId.get(f.id)!, manualSource: source } : f);
           return { files, validations: validateBatch(files) };
         }),
 

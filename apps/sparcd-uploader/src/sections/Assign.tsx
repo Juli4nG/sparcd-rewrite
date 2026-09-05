@@ -12,7 +12,6 @@ import { CaptureTimeEditor } from '../components/CaptureTimeEditor';
 import { sanitizeUploaderUser } from '../lib/normalize';
 import { supportedTimeZones } from '../lib/exifTime';
 import { timeZoneForCoords } from '../lib/coords';
-import { captureTimeComplete } from '../lib/validation';
 
 const sectionLabel =
   'font-[600] text-[11px] tracking-[0.16em] uppercase text-inkSoft mb-2';
@@ -175,13 +174,12 @@ export function Assign() {
   const needsCaptureTime = files.some(
     (f) => f.processState === 'ready' && !f.exifNaive,
   );
-  const captureComplete = captureTimeComplete(files);
   // Gate is everything the USER needs to supply — deployment, collection,
   // identity, and a capture time for whatever's finished Inspect so far.
   // Background processing finishing is no longer part of this gate: Upload
   // streams blobs as files individually become ready and only publishes once
   // processing genuinely completes, so there's nothing to wait for here.
-  const baseReady = !!selectedLocationKey && !!slug && !!collection && captureComplete;
+  const baseReady = !!selectedLocationKey && !!slug && !!collection;
 
   function handleContinue() {
     if (!baseReady) return;
@@ -319,7 +317,7 @@ export function Assign() {
 
       {needsCaptureTime && (
         <section>
-          <h2 className={sectionLabel}>Capture time</h2>
+          <h2 className={sectionLabel}>Capture times</h2>
           <CaptureTimeEditor files={files} />
         </section>
       )}
@@ -360,9 +358,7 @@ export function Assign() {
                 ? 'Select a deployment location first'
                 : !collection
                   ? 'Select a target collection first'
-                  : !slug
-                    ? 'Set an uploader identity first'
-                    : 'Set a capture time for every file missing one'
+                  : 'Set an uploader identity first'
               : 'Continue to upload'
           }
           className={`bg-ink text-paper border border-ink px-3.5 py-1.5 text-[14px] font-body font-[600] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${

@@ -21,6 +21,7 @@ export function localTagImages(record: FlipRecord): TagImage[] {
     // One time to show, whichever source it came from — the tagger only needs
     // the value; keeping the two apart is the uploader's concern.
     baseTimestamp: captureTimestampOf(f) ?? '',
+    timestampSource: f.timestampSource,
     // Copied, not aliased — a draft seeded from this must never write through
     // into the record the uploader is going to read back.
     baseObservations: (record.tags[f.relPath] ?? []).map((o) => ({ ...o })),

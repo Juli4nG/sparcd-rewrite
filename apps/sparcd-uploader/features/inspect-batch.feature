@@ -47,7 +47,7 @@ Feature: Inspect the scanned batch before assigning it
   Scenario: A file with no capture time is a warning here, not a blocker
     Given a file carries no camera capture time
     Then it is shown as a warning at Inspect
-    And the batch can still continue to the Assign step, where a time is entered
+    And the batch can still continue to the Assign step, where the estimate can be overridden
 
   @unmapped
   Scenario: Files with identical content are flagged as duplicates

@@ -1152,7 +1152,7 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(warned!.text).toContain('QuotaExceededError');
   });
 
-  it('confirms a streamed run by one listing pass, with no per-file HEAD', async () => {
+  it.each(['ready', 'processing'] as const)('confirms a streamed run starting %s by one listing pass, with no per-file HEAD', async (processState) => {
     const entries = [makeFileEntry(0), makeFileEntry(1), makeFileEntry(2)];
     const client = makeStreamingClient();
     mocks.client = client;
@@ -1172,7 +1172,7 @@ describe('streamed runs upload as files individually become ready', () => {
           uploaderSlug: 'user',
           description: 'description',
           timeZone: 'UTC',
-          files: [entries[0], ...entries.slice(1).map((e) => ({ ...e, processState: 'processing' as const, sha256: undefined }))],
+          files: [entries[0], ...entries.slice(1).map((e) => processState === 'ready' ? e : ({ ...e, processState, sha256: undefined }))],
         },
       },
       (snap) => {
@@ -1287,4 +1287,23 @@ describe('streamed runs upload as files individually become ready', () => {
     expect(client.writeImmutableStream).toHaveBeenCalledTimes(3);
     expect(mocks.markBatchComplete).toHaveBeenCalledTimes(1);
   });
+});
+
+it('waits for final camera references before planning a streamed missing time', async () => {
+  const entries = [makeFileEntry(0), { ...makeFileEntry(1), exifNaive: undefined }, makeFileEntry(2)];
+  mocks.client = makeStreamingClient();
+  let last: UploadSnapshot | null = null;
+  const run = runStreamingUpload({
+    config: CONFIG, dryRun: false, concurrency: manual(2),
+    build: {
+      location: LOCATION, collectionUuid: 'collection', bucket: 'bucket',
+      uploaderSlug: 'user', description: '', timeZone: 'UTC',
+      files: [entries[0], entries[1], { ...entries[2], processState: 'processing', sha256: undefined }],
+    },
+  }, (snap) => { last = snap; });
+  run.notifyReady([entries[2]]);
+  run.close(entries);
+  expect((await collect(run, () => last)).phase).toBe('done');
+  expect(mocks.markFileState.mock.calls.some(([, record]) => record.timestampSource === 'interpolated')).toBe(true);
+  expect(mocks.attachBundle.mock.calls[0][0].mediaCsv).toContain('[TIMESTAMP:interpolated]');
 });
