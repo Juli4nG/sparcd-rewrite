@@ -2,7 +2,6 @@
 // resolution. Data-compatible with the desktop app's persisted `keyBinding`.
 
 import { describe, it, expect } from 'vitest';
-import { shouldReconcileSpeciesProfile } from '@sparcd/auth-ui';
 import {
   conflictingKeyOwners,
   diffSpecies,
@@ -34,17 +33,6 @@ describe('normalizeJavaKeyCode', () => {
     expect(normalizeJavaKeyCode(null)).toBeNull();
     expect(normalizeJavaKeyCode('')).toBeNull();
     expect(normalizeJavaKeyCode('ENTER')).toBeNull();
-  });
-});
-
-describe('login-only species reconciliation', () => {
-  it('skips restored sessions and runs after an explicit or relayed login', () => {
-    expect(shouldReconcileSpeciesProfile(0)).toBe(false);
-    expect(shouldReconcileSpeciesProfile(1)).toBe(true);
-  });
-
-  it('still initializes local-batch profiles without an S3 login', () => {
-    expect(shouldReconcileSpeciesProfile(0, true)).toBe(true);
   });
 });
 

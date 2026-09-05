@@ -321,6 +321,7 @@ When('{string} is assigned to a species and pressed', async ({ page }, key: stri
   await page.keyboard.press(key);
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText(key.toUpperCase());
   await page.keyboard.press(key);
+  await page.keyboard.press(`Shift+${key.toUpperCase()}`);
 });
 
 Then('the keyboard shortcut reference is not opened', async ({ page }) => {
