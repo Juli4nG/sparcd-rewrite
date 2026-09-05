@@ -233,18 +233,8 @@ export const useKeyBindings = create<KeyBindingState>()((set) => ({
       updateActiveProfile(state, (profile) => {
         const pending = profile.pendingSpeciesChange;
         if (!pending) return profile;
-        const overrides = { ...profile.overrides };
-        const overrideRevisions = { ...profile.overrideRevisions };
-        for (const removed of pending.diff.removed) {
-          overrides[removed.scientificName] = null;
-          overrideRevisions[removed.scientificName] = nextKeyProfileRevision(
-            profile.overrideRevisions[removed.scientificName],
-          );
-        }
         return {
           ...profile,
-          overrides,
-          overrideRevisions,
           acceptedSpecies: pending.next,
           acceptedRevision: nextKeyProfileRevision(profile.acceptedRevision),
           pendingSpeciesChange: undefined,

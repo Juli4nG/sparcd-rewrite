@@ -647,14 +647,14 @@ When('the vocabulary change is acknowledged', async ({ page }) => {
   await speciesChangedDialog(page).getByRole('button', { name: 'I understand' }).click();
 });
 
-Then('removed-species bindings are pruned and the message stays acknowledged', async ({ page }) => {
+Then('the binding the user set for the removed species is kept and the message stays acknowledged', async ({ page }) => {
   const removed = await page.evaluate(() => {
     const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
       state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
     };
     return Object.values(stored.state.profiles)[0].overrides['Former species'];
   });
-  expect(removed).toBeNull();
+  expect(removed).toBe('!');
   await page.reload();
   await connect(page);
   await expect(speciesChangedDialog(page)).toHaveCount(0);
