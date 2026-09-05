@@ -58,11 +58,14 @@ export function KeyConflictDialog({
           <kbd className="border border-ink px-1.5 font-mono">{keyName}</kbd> is already assigned
           to {ownerNames.join(', ')}. Reassign it to {targetName}?
         </p>
+        <p className="mt-2 text-[13px] text-warn">
+          Reassigning will clear the existing {ownerNames.length === 1 ? 'binding' : 'bindings'}.
+        </p>
         <div className="mt-5 flex justify-end gap-2">
-          <button ref={cancelRef} type="button" onClick={onCancel} className="min-h-11 border border-rule px-4 text-[13px] text-ink">
+          <button ref={cancelRef} type="button" onClick={onCancel} className="min-h-11 border border-rule px-4 text-[13px] text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
             Cancel
           </button>
-          <button ref={confirmRef} type="button" onClick={onConfirm} className="min-h-11 border border-warn bg-warn px-4 text-[13px] font-[600] text-ink">
+          <button ref={confirmRef} type="button" onClick={onConfirm} className="min-h-11 border border-warn bg-warn px-4 text-[13px] font-[600] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
             Reassign key
           </button>
         </div>
