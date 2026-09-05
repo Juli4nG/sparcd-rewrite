@@ -1,5 +1,5 @@
 export const KEYBINDING_STORAGE_KEY = 'sparcd-tagger-keybindings';
-export const KEYBINDING_STORAGE_VERSION = 3;
+const KEYBINDING_STORAGE_VERSION = 3;
 
 export type SpeciesKeyConfig = {
   scientificName: string;
@@ -16,8 +16,6 @@ export type SpeciesDiff = {
 export type PendingSpeciesChange = { next: SpeciesKeyConfig[]; diff: SpeciesDiff };
 
 export type Revision = { at: number; sequence: number; writer: string };
-
-export type Revisioned<T> = { value: T; revision: Revision };
 
 export type RevisionedKeyProfile = {
   overrides: Record<string, string | null>;
@@ -42,11 +40,10 @@ const WRITER_ID =
     : `writer-${Math.random().toString(36).slice(2)}`;
 let revisionSequence = 0;
 
-export function nextKeyProfileRevision(...observed: (Revision | undefined)[]): Revision {
+export function nextKeyProfileRevision(observed?: Revision): Revision {
   revisionSequence += 1;
-  const observedAt = Math.max(0, ...observed.map((revision) => revision?.at ?? 0));
   return {
-    at: Math.max(Date.now(), observedAt + 1),
+    at: Math.max(Date.now(), (observed?.at ?? 0) + 1),
     sequence: revisionSequence,
     writer: WRITER_ID,
   };
@@ -73,7 +70,7 @@ export function emptyRevisionedProfile(): RevisionedKeyProfile {
   return { overrides: {}, overrideRevisions: {} };
 }
 
-export function mergeRevisionedProfile(
+function mergeRevisionedProfile(
   a: RevisionedKeyProfile | undefined,
   b: RevisionedKeyProfile | undefined,
 ): RevisionedKeyProfile {
@@ -166,7 +163,7 @@ function migrateProfile(raw: unknown): RevisionedKeyProfile {
   };
 }
 
-export function parseRevisionedProfiles(raw: string | null): RevisionedKeyProfiles {
+function parseRevisionedProfiles(raw: string | null): RevisionedKeyProfiles {
   if (!raw) return {};
   try {
     const envelope = JSON.parse(raw) as {
@@ -197,7 +194,7 @@ export function parseRevisionedProfiles(raw: string | null): RevisionedKeyProfil
   }
 }
 
-export function serializeRevisionedProfiles(profiles: RevisionedKeyProfiles): string {
+function serializeRevisionedProfiles(profiles: RevisionedKeyProfiles): string {
   const orderedProfiles = Object.fromEntries(
     Object.entries(profiles)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -225,13 +222,6 @@ export function readRevisionedProfiles(storage: Storage): RevisionedKeyProfiles 
   return parseRevisionedProfiles(storage.getItem(KEYBINDING_STORAGE_KEY));
 }
 
-export function pendingRevisionedSpeciesProfile(
-  storage: Storage,
-  profileId: string,
-): SpeciesDiff | null {
-  return readRevisionedProfiles(storage)[profileId]?.pendingSpeciesChange?.diff ?? null;
-}
-
 /** Restored sessions start at connection revision zero. Login events, including
  * a live login relayed from another tab, increment it before the gate mounts. */
 export function shouldReconcileSpeciesProfile(
@@ -255,96 +245,4 @@ export function mergeAndWriteRevisionedProfiles(
 
 export function keyProfileId(endpoint: string, accessKey: string): string {
   return `${endpoint.trim()}\u0000${accessKey.trim()}`;
-}
-
-function normalizeSpecies(species: readonly SpeciesKeyConfig[]): SpeciesKeyConfig[] {
-  return species
-    .map(({ scientificName, commonName, keyBinding }) => ({ scientificName, commonName, keyBinding }))
-    .sort((a, b) => a.scientificName.localeCompare(b.scientificName));
-}
-
-export function diffRevisionedSpecies(
-  accepted: readonly SpeciesKeyConfig[],
-  current: readonly SpeciesKeyConfig[],
-): SpeciesDiff {
-  const before = new Map(accepted.map((species) => [species.scientificName, species]));
-  const after = new Map(current.map((species) => [species.scientificName, species]));
-  return {
-    added: current.filter((species) => !before.has(species.scientificName)),
-    removed: accepted.filter((species) => !after.has(species.scientificName)),
-    modified: current.flatMap((species) => {
-      const prior = before.get(species.scientificName);
-      return prior &&
-        (prior.commonName !== species.commonName || prior.keyBinding !== species.keyBinding)
-        ? [{ before: prior, after: species }]
-        : [];
-    }),
-  };
-}
-
-function profileForMutation(
-  profiles: RevisionedKeyProfiles,
-  profileId: string,
-): RevisionedKeyProfile {
-  if (profiles[profileId]) return profiles[profileId];
-  const hasClaimedLegacy = Object.keys(profiles).some((id) => id !== '__legacy__');
-  return !hasClaimedLegacy && profiles.__legacy__
-    ? profiles.__legacy__
-    : emptyRevisionedProfile();
-}
-
-export function stageRevisionedSpeciesProfile(
-  storage: Storage,
-  profileId: string,
-  species: readonly SpeciesKeyConfig[],
-): SpeciesDiff | null {
-  const profiles = readRevisionedProfiles(storage);
-  const profile = profileForMutation(profiles, profileId);
-  const next = normalizeSpecies(species);
-  let updated: RevisionedKeyProfile;
-  if (!profile.acceptedSpecies) {
-    updated = {
-      ...profile,
-      acceptedSpecies: next,
-      acceptedRevision: nextKeyProfileRevision(profile.acceptedRevision),
-    };
-  } else {
-    const diff = diffRevisionedSpecies(profile.acceptedSpecies, next);
-    const pendingSpeciesChange =
-      diff.added.length || diff.removed.length || diff.modified.length ? { next, diff } : undefined;
-    updated = {
-      ...profile,
-      pendingSpeciesChange,
-      pendingRevision: nextKeyProfileRevision(profile.pendingRevision),
-    };
-  }
-  const merged = mergeAndWriteRevisionedProfiles(storage, { ...profiles, [profileId]: updated });
-  return merged[profileId].pendingSpeciesChange?.diff ?? null;
-}
-
-export function acknowledgeRevisionedSpeciesProfile(storage: Storage, profileId: string): void {
-  const profiles = readRevisionedProfiles(storage);
-  const profile = profileForMutation(profiles, profileId);
-  const pending = profile.pendingSpeciesChange;
-  if (!pending) return;
-  const overrides = { ...profile.overrides };
-  const overrideRevisions = { ...profile.overrideRevisions };
-  for (const removed of pending.diff.removed) {
-    overrides[removed.scientificName] = null;
-    overrideRevisions[removed.scientificName] = nextKeyProfileRevision(
-      profile.overrideRevisions[removed.scientificName],
-    );
-  }
-  mergeAndWriteRevisionedProfiles(storage, {
-    ...profiles,
-    [profileId]: {
-      ...profile,
-      overrides,
-      overrideRevisions,
-      acceptedSpecies: pending.next,
-      acceptedRevision: nextKeyProfileRevision(profile.acceptedRevision),
-      pendingSpeciesChange: undefined,
-      pendingRevision: nextKeyProfileRevision(profile.pendingRevision),
-    },
-  });
 }
