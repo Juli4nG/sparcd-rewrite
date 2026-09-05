@@ -127,3 +127,7 @@ try {
     tagger?.server.close(),
   ]);
 }
+
+// A proxied WebSocket upgrade can leave a proxy-to-app socket open, and
+// server.close() waits on it forever. The checks have passed by this point.
+process.exit(0);
