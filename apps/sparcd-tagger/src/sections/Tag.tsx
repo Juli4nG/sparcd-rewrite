@@ -484,7 +484,6 @@ export function Tag() {
     apply,
     applyIncrement,
     targetsOf,
-    detag: detagFn,
     setQuestionableMany: setQuestionableManyFn,
     drafts,
     flushSaves,
@@ -1410,7 +1409,6 @@ type HandlerState = {
   apply: (tag: AppliedTag) => void;
   applyIncrement: (tag: AppliedTag) => void;
   targetsOf: () => TagTarget[];
-  detag: (ctx: UploadCtx, targets: TagTarget[]) => void;
   setQuestionableMany: (ctx: UploadCtx, targets: TagTarget[], value: boolean) => void;
   drafts: Record<string, DraftRecord>;
   flushSaves: () => Promise<void>;
@@ -1519,7 +1517,7 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
 
   // User-assigned printable species keys take precedence over built-in
   // single-character shortcuts. This makes every alphanumeric and symbol key
-  // usable; assigning j/k/x/? intentionally displaces that app shortcut.
+  // usable; assigning `?` intentionally displaces that app shortcut.
   const current = s.list[s.focus];
   const printableKey = normalizeBindableEventKey(e);
   const speciesAction = printableKey
