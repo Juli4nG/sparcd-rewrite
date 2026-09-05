@@ -239,8 +239,14 @@ export function NewUpload() {
           <FileList severityFilter={severityFilter} />
           <p className="font-body text-[13px] text-inkMute">
             Press <span className="font-mono">D</span> to drop a flagged duplicate — it's kept
-            otherwise. A time tagged <span className="font-mono">EST.</span> was estimated — review
-            it in Assign.
+            otherwise.
+            {summary.noCameraTime > 0 && (
+              <>
+                {' '}
+                A time tagged <span className="font-mono">EST.</span> was estimated — review it in
+                Assign.
+              </>
+            )}
           </p>
         </div>
       )}

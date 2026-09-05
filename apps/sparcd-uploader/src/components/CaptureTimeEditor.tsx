@@ -290,11 +290,14 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
             {tab === 'interpolate' ? (
               <>
                 <p className="font-body text-[13px] leading-normal text-inkSoft mt-3 mb-2">
-                  Filled from timestamped neighbours in filename order. 10 minutes past the first or
-                  last file. File modified time when no neighbour exists.
+                  {timed.length === 0
+                    ? 'No file in this batch has a camera time, so file modified times are used.'
+                    : 'Filled from timestamped neighbours in filename order. 10 minutes past the first or last file. File modified time when no neighbour exists.'}
                 </p>
                 <p className="font-mono text-[12px] text-ink">
-                  {gapsFilled} gaps filled · nothing to enter
+                  {gapsFilled === selected.length
+                    ? `${gapsFilled} gaps filled · nothing to enter`
+                    : `${gapsFilled} of ${selected.length} filled by estimate · nothing to enter`}
                 </p>
               </>
             ) : (
@@ -377,14 +380,14 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
             {cameraTicks.map(({ pct, opacity }) => (
               <i
                 key={`c${pct}`}
-                className="absolute top-1.5 w-px h-4 bg-accent"
+                className="absolute top-[20%] w-px h-[60%] bg-accent"
                 style={{ left: `${pct}%`, opacity }}
               />
             ))}
             {estimateTicks.map(({ pct, opacity }) => (
               <i
                 key={`e${pct}`}
-                className="absolute top-0.5 w-0.5 h-6 bg-warn"
+                className="absolute top-0 w-[3px] h-full bg-warn"
                 style={{ left: `${pct}%`, opacity }}
               />
             ))}
@@ -417,7 +420,7 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
               <div
                 key={f.id}
                 className={`border border-ruleSoft bg-panel p-2 min-w-0 ${
-                  editing === f.id ? 'col-span-2 sm:col-span-3' : ''
+                  editing === f.id ? 'col-span-2' : ''
                 }`}
               >
                 <button
@@ -448,30 +451,32 @@ export function CaptureTimeEditor({ files }: { files: FileEntry[] }) {
                     )}
                   </span>
                 </button>
-                <span className="block font-body text-[11px] leading-snug text-inkMute mt-1">
-                  {f.manualNaive && estimate ? (
-                    <button
-                      type="button"
-                      onClick={() => setManualNaive(f.id, null)}
-                      className="text-inkMute hover:text-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                    >
-                      ✕ back to estimate ({shortNaive(estimate.naive)})
-                    </button>
-                  ) : (
-                    methodLine(f, estimate, uploadTimeZone, spreadStart)
+                <div className="flex items-center gap-2 mt-1">
+                  {editing === f.id && (
+                    <input
+                      type="datetime-local"
+                      step={1}
+                      autoFocus
+                      aria-label={`Capture time for ${f.fileName}`}
+                      value={f.manualNaive ? naiveToInputValue(f.manualNaive) : ''}
+                      onChange={(e) => setManualNaive(f.id, inputValueToNaive(e.target.value))}
+                      className={inputClass}
+                    />
                   )}
-                </span>
-                {editing === f.id && (
-                  <input
-                    type="datetime-local"
-                    step={1}
-                    autoFocus
-                    aria-label={`Capture time for ${f.fileName}`}
-                    value={f.manualNaive ? naiveToInputValue(f.manualNaive) : ''}
-                    onChange={(e) => setManualNaive(f.id, inputValueToNaive(e.target.value))}
-                    className={`${inputClass} w-full mt-1.5`}
-                  />
-                )}
+                  <span className="font-body text-[11px] leading-snug text-inkMute min-w-0">
+                    {f.manualNaive && estimate ? (
+                      <button
+                        type="button"
+                        onClick={() => setManualNaive(f.id, null)}
+                        className="text-inkMute hover:text-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                      >
+                        ✕ back to estimate ({shortNaive(estimate.naive)})
+                      </button>
+                    ) : (
+                      methodLine(f, estimate, uploadTimeZone, spreadStart)
+                    )}
+                  </span>
+                </div>
               </div>
             );
           })}
