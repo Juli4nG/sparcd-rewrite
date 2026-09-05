@@ -191,7 +191,7 @@ Feature: Assign species to images in an upload
     Then a blocking message lists added, removed and updated species
     And reopening again does not bypass the required acknowledgement
     When the vocabulary change is acknowledged
-    Then the user's own binding for the removed species is kept and the message stays acknowledged
+    Then the binding the user set for the removed species is kept and the message stays acknowledged
 
   @H2
   Scenario: A species reference image can be enlarged before deciding
