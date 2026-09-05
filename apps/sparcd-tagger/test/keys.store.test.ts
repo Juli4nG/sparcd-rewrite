@@ -21,9 +21,10 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 let useKeyBindings: KeyStore;
 let rehydrateKeyBindings: typeof import('../src/lib/keys').rehydrateKeyBindings;
+let effectiveKey: typeof import('../src/lib/keys').effectiveKey;
 
 beforeAll(async () => {
-  ({ useKeyBindings, rehydrateKeyBindings } = await import('../src/lib/keys'));
+  ({ useKeyBindings, rehydrateKeyBindings, effectiveKey } = await import('../src/lib/keys'));
 });
 
 const original = [
@@ -76,7 +77,18 @@ describe('per-user keybinding profiles', () => {
     profile = useKeyBindings.getState().profiles['server\u0000alice'];
     expect(profile.pendingSpeciesChange).toBeUndefined();
     expect(profile.acceptedSpecies).toEqual(changed);
-    expect(profile.overrides.removed).toBeNull();
+    expect(profile.overrides.removed).toBe('!');
+  });
+
+  it('restores a default key when the server removes and re-adds a species', () => {
+    useKeyBindings.getState().activateProfile('server\u0000alice');
+    useKeyBindings.getState().stageSpecies(original);
+    useKeyBindings.getState().stageSpecies(changed);
+    useKeyBindings.getState().acknowledgeSpeciesChange();
+    useKeyBindings.getState().stageSpecies(original);
+    useKeyBindings.getState().acknowledgeSpeciesChange();
+    const { overrides } = useKeyBindings.getState().profiles['server\u0000alice'];
+    expect(effectiveKey('removed', 'R', overrides)).toBe('r');
   });
 
   it('distinguishes an accepted empty vocabulary from an uninitialized profile', () => {
