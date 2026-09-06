@@ -45,16 +45,14 @@ describe('uploader species-keybinding preflight', () => {
     expect(shouldReconcileSpeciesProfile(1)).toBe(true);
   });
   it('uses the same endpoint/user profile identity as the tagger', () => {
-    expect(speciesKeyProfileId(' https://s3.example ', ' alice ')).toBe(
-      'https://s3.example\u0000alice',
-    );
+    expect(speciesKeyProfileId(' https://s3.example ', ' alice ')).toBe('713969107020abf5');
   });
 
   it('removes the one-time legacy profile after a scoped profile claims it', () => {
     const storage = memoryStorage();
     storage.setItem(
       KEYBINDING_STORAGE_KEY,
-      JSON.stringify({ state: { overrides: { a: '!' } }, version: 1 }),
+      JSON.stringify({ state: { overrides: { a: '!' } }, version: 4 }),
     );
 
     stageSpeciesProfile(storage, speciesKeyProfileId('server', 'alice'), before);
@@ -130,6 +128,6 @@ describe('uploader species-keybinding preflight', () => {
     mergeAndWriteRevisionedProfiles(storage, profiles('!', 1, 'stale-tagger'));
 
     expect(readRevisionedProfiles(storage)[profileId].overrides.removed).toBeNull();
-    expect(storage.getItem(KEYBINDING_STORAGE_KEY)).toContain('"version":3');
+    expect(storage.getItem(KEYBINDING_STORAGE_KEY)).toContain('"version":4');
   });
 });

@@ -1,5 +1,5 @@
 export const KEYBINDING_STORAGE_KEY = 'sparcd-tagger-keybindings';
-export const KEYBINDING_STORAGE_VERSION = 3;
+export const KEYBINDING_STORAGE_VERSION = 4;
 
 export type SpeciesKeyConfig = {
   scientificName: string;
@@ -170,12 +170,14 @@ export function parseRevisionedProfiles(raw: string | null): RevisionedKeyProfil
   if (!raw) return {};
   try {
     const envelope = JSON.parse(raw) as {
+      version?: number;
       state?: {
         profiles?: Record<string, unknown>;
         overrides?: Record<string, string | null>;
         knownSpecies?: string[];
       };
     };
+    if (envelope.version !== KEYBINDING_STORAGE_VERSION) return {};
     if (envelope.state?.profiles) {
       return Object.fromEntries(
         Object.entries(envelope.state.profiles).map(([id, profile]) => [id, migrateProfile(profile)]),
@@ -253,8 +255,19 @@ export function mergeAndWriteRevisionedProfiles(
   return merged;
 }
 
+function fnv1a(input: string, seed: number): string {
+  let hash = seed;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = Math.imul(hash ^ input.charCodeAt(i), 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/** Hashed so the access key never lands in the clear inside the stored profile
+ * name. Two seeds give 64 bits, so two profiles on one machine won't share a slot. */
 export function keyProfileId(endpoint: string, accessKey: string): string {
-  return `${endpoint.trim()}\u0000${accessKey.trim()}`;
+  const input = `${endpoint.trim()}\u0000${accessKey.trim()}`;
+  return fnv1a(input, 0x811c9dc5) + fnv1a(input, 0x9747b28c);
 }
 
 function normalizeSpecies(species: readonly SpeciesKeyConfig[]): SpeciesKeyConfig[] {
