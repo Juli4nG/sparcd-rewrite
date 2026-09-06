@@ -120,14 +120,11 @@ try {
   assert.equal(taggerWs, 101, `tagger WS upgrade: expected 101, got ${taggerWs}`);
 
   console.log(`same-origin proxy smoke passed at ${origin} (HTTP + WS)`);
+} catch (err) {
+  console.error(err);
+  process.exitCode = 1;
 } finally {
-  await Promise.allSettled([
-    proxy?.close(),
-    uploader?.server.close(),
-    tagger?.server.close(),
-  ]);
+  // Don't wait for server.close(): a proxied WebSocket upgrade can leave a
+  // proxy-to-app socket open and the close never finishes.
+  process.exit();
 }
-
-// A proxied WebSocket upgrade can leave a proxy-to-app socket open, and
-// server.close() waits on it forever. The checks have passed by this point.
-process.exit(0);
