@@ -255,14 +255,19 @@ export function mergeAndWriteRevisionedProfiles(
   return merged;
 }
 
-/** Hashed so the access key never lands in the clear inside the stored profile name. */
-export function keyProfileId(endpoint: string, accessKey: string): string {
-  const input = `${endpoint.trim()}\u0000${accessKey.trim()}`;
-  let hash = 0x811c9dc5;
+function fnv1a(input: string, seed: number): string {
+  let hash = seed;
   for (let i = 0; i < input.length; i += 1) {
     hash = Math.imul(hash ^ input.charCodeAt(i), 0x01000193);
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/** Hashed so the access key never lands in the clear inside the stored profile
+ * name. Two seeds give 64 bits, so two profiles on one machine won't share a slot. */
+export function keyProfileId(endpoint: string, accessKey: string): string {
+  const input = `${endpoint.trim()}\u0000${accessKey.trim()}`;
+  return fnv1a(input, 0x811c9dc5) + fnv1a(input, 0x9747b28c);
 }
 
 function normalizeSpecies(species: readonly SpeciesKeyConfig[]): SpeciesKeyConfig[] {

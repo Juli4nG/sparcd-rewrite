@@ -45,7 +45,7 @@ describe('uploader species-keybinding preflight', () => {
     expect(shouldReconcileSpeciesProfile(1)).toBe(true);
   });
   it('uses the same endpoint/user profile identity as the tagger', () => {
-    expect(speciesKeyProfileId(' https://s3.example ', ' alice ')).toBe('71396910');
+    expect(speciesKeyProfileId(' https://s3.example ', ' alice ')).toBe('713969107020abf5');
   });
 
   it('removes the one-time legacy profile after a scoped profile claims it', () => {
