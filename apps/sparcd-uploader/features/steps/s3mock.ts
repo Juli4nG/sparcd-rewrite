@@ -25,7 +25,11 @@ export type PutRecord = {
 export type S3Error = { status: number; code: string; message?: string };
 
 /** Per-key hook: return an error to fail the call, or undefined to let it run. */
-export type PutHook = (bucket: string, key: string, body: Buffer) => S3Error | undefined;
+export type PutHook = (
+  bucket: string,
+  key: string,
+  body: Buffer,
+) => S3Error | undefined | Promise<S3Error | undefined>;
 
 const XMLNS = 'http://s3.amazonaws.com/doc/2006-03-01/';
 
@@ -341,7 +345,7 @@ export class S3Mock {
           if (h.startsWith('x-amz-meta-')) meta[h.slice('x-amz-meta-'.length)] = v;
         }
         for (const hook of this.putHooks) {
-          const err = hook(bucket, key, body);
+          const err = await hook(bucket, key, body);
           if (err) {
             await fail(err);
             return;

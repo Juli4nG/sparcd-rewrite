@@ -171,6 +171,12 @@ Feature: Upload and publish a batch
     Then the run stops and reports that the problem looks systemic rather than per-file
 
   @unmapped
+  Scenario: A lane stuck offline after a systemic abort surfaces the error without waiting for the network
+    Given a run aborts systemically while some lanes are waiting for the network
+    Then the error screen is shown immediately
+    And the run does not wait for the network to return before reporting the failure
+
+  @unmapped
   Scenario: An object already present at the same path is never silently overwritten
     Given an object already exists at a path the run intends to write
     When a fresh upload attempts that write

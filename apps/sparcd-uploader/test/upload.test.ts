@@ -439,6 +439,63 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('unblocks a retrying offline lane immediately when the systemic abort fires', async () => {
+    // Regression for #69. The scenario:
+    //   1. Two lanes start online. File 0 hits a transient error and goes to
+    //      sleep(backoff) before its next attempt. File 1 hits a run-fatal
+    //      forbidden error, which makes the supervisor call abort.abort() —
+    //      without setting `cancelled`.
+    //   2. The network drops while file 0 is sleeping.
+    //   3. File 0 wakes, calls ensureOnline(). It sees onLine===false and
+    //      abort.signal.aborted===true (systemic abort, not user cancel).
+    //   With the fix: ensureOnline throws immediately at the aborted check.
+    //   Without: it called waitForOnline with an already-fired signal — the
+    //   abort listener was registered too late, the poll timer (30 s) was the
+    //   only escape, so the run hung until that tick.
+    vi.useFakeTimers();
+    const fakeWindow = new EventTarget();
+    vi.stubGlobal('window', fakeWindow);
+    vi.stubGlobal('navigator', { onLine: true });
+    try {
+      const session = makeSession(['pending', 'pending']);
+      const f0key = session.files[0].remoteKey!;
+      mocks.client = makeClient(session.files);
+      mocks.client.writeImmutableStream.mockImplementation(async (_bucket: string, key: string) => {
+        if (key === f0key) {
+          // Transient server error: lane retries via sleep(backoff).
+          throw Object.assign(new Error('service unavailable'), { $metadata: { httpStatusCode: 503 } });
+        }
+        // Run-fatal: supervisor triggers abort.abort() without setting cancelled.
+        throw forbidden();
+      });
+      let last: UploadSnapshot | null = null;
+      const run = resumeUpload(
+        { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(2) },
+        (snap) => { last = snap; },
+      );
+      // Flush microtasks: both lanes have attempted their writes. File 1's
+      // forbidden has propagated to the supervisor, which called abort.abort().
+      // File 0's lane is now sleeping in backoff (setTimeout, frozen by fake
+      // timers). abort.signal.aborted is true; cancelled is false.
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      // Go offline before the sleeping lane wakes and calls ensureOnline.
+      vi.stubGlobal('navigator', { onLine: false });
+      // Advance the fake clock: file 0's backoff sleep resolves, the lane
+      // calls ensureOnline, which now sees onLine===false and
+      // abort.signal.aborted===true and must throw rather than park in
+      // waitForOnline indefinitely.
+      // Use runAllTimersAsync so microtasks flush between timer firings —
+      // synchronous runAllTimers would loop the supervisor interval (1 s) tens
+      // of thousands of times before the test runner detects an infinite loop.
+      await vi.runAllTimersAsync();
+      const snap = await collect(run, () => last);
+      expect(snap.phase).toBe('error');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('publishes metadata after a clean sweep', async () => {
     const session = makeSession(Array.from({ length: 2 }, () => 'pending'));
     mocks.client = makeClient(session.files);
