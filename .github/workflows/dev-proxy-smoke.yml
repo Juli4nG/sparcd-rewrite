@@ -1,0 +1,55 @@
+name: Dev proxy smoke test
+
+on:
+  pull_request:
+    paths:
+      - "apps/sparcd-dev-proxy/**"
+      - "apps/sparcd-uploader/**"
+      - "apps/sparcd-tagger/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/dev-proxy-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/sparcd-dev-proxy/**"
+      - "apps/sparcd-uploader/**"
+      - "apps/sparcd-tagger/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/dev-proxy-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify both apps through one origin
+        run: pnpm --filter sparcd-dev-proxy smoke
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter sparcd-uploader exec playwright install --with-deps chromium
+
+      - name: Run cross-tool hand-off BDD
+        run: pnpm --filter sparcd-uploader test:bdd:cross-tool

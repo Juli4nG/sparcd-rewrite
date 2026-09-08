@@ -65,6 +65,9 @@ export const speciesApply = (page: Page, scientific: string): Locator =>
     'button[title^="Apply"], button[title$="already applied"], button[title="Focus an image first"]',
   );
 
+export const speciesTile = (page: Page, scientific: string): Locator =>
+  speciesRow(page, scientific).locator('button[title^="Select "]');
+
 export const speciesLoupeButton = (page: Page, scientific: string): Locator =>
   speciesRow(page, scientific).locator('button[title="Enlarge reference"]');
 
@@ -170,4 +173,3 @@ export async function enterFocusView(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Focus', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Zoom in' })).toBeVisible();
 }
-

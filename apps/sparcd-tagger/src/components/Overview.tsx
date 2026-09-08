@@ -7,6 +7,8 @@ import { isRangeFullySelected } from '../lib/selection';
 import type { Burst, BurstGrouping } from '../lib/bursts';
 import { isVideoImage, type TagImage } from '../lib/workspace';
 import type { DraftObservation } from '../lib/db';
+import type { AppliedTag } from '../lib/drafts';
+import { parseSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
 
 /** A one-line label for an image's effective species set: the first species (with
  *  count when >1), plus `+N` when more follow. Ghost reads as "Ghost". */
@@ -37,6 +39,8 @@ type OverviewProps = {
   onSelectBurst: (start: number) => void;
   /** Drill one image into the Focus view (Overview mode only; omit for the strip). */
   onDrill?: (i: number) => void;
+  /** A spatial drop affects this image only, regardless of selection. */
+  onDropSpecies?: (i: number, tag: AppliedTag) => void;
 };
 
 const BAND_H = 30;
@@ -78,6 +82,7 @@ export function Overview({
   onPick,
   onSelectBurst,
   onDrill,
+  onDropSpecies,
 }: OverviewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const width = useElementWidth(parentRef);
@@ -153,6 +158,7 @@ export function Overview({
                   selected={selected.has(item.indices[0])}
                   onPick={onPick}
                   onDrill={onDrill}
+                  onDropSpecies={onDropSpecies}
                 />
               ) : (
                 <div
@@ -168,6 +174,7 @@ export function Overview({
                       selected={selected.has(idx)}
                       onPick={onPick}
                       onDrill={onDrill}
+                      onDropSpecies={onDropSpecies}
                     />
                   ))}
                 </div>
@@ -228,6 +235,7 @@ function ListCell({
   selected,
   onPick,
   onDrill,
+  onDropSpecies,
 }: {
   img: TagImage;
   index: number;
@@ -235,11 +243,13 @@ function ListCell({
   selected: boolean;
   onPick: (i: number, mods: PickMods) => void;
   onDrill?: (i: number) => void;
+  onDropSpecies?: (i: number, tag: AppliedTag) => void;
 }) {
   const draft = useDraftStore((s) => s.drafts[img.key]);
   const eff = effectiveOf(img, draft);
   return (
     <button
+      {...speciesDropProps(index, onDropSpecies)}
       onClick={(e) => onPick(index, modsOf(e))}
       onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
@@ -312,6 +322,7 @@ function GridCell({
   selected,
   onPick,
   onDrill,
+  onDropSpecies,
 }: {
   img: TagImage;
   index: number;
@@ -319,11 +330,13 @@ function GridCell({
   selected: boolean;
   onPick: (i: number, mods: PickMods) => void;
   onDrill?: (i: number) => void;
+  onDropSpecies?: (i: number, tag: AppliedTag) => void;
 }) {
   const draft = useDraftStore((s) => s.drafts[img.key]);
   const eff = effectiveOf(img, draft);
   return (
     <button
+      {...speciesDropProps(index, onDropSpecies)}
       onClick={(e) => onPick(index, modsOf(e))}
       onDoubleClick={onDrill ? (e) => plainDrill(e, onDrill, index) : undefined}
       aria-current={active ? 'true' : undefined}
@@ -377,6 +390,24 @@ function GridCell({
       </span>
     </button>
   );
+}
+
+function speciesDropProps(index: number, onDropSpecies?: (i: number, tag: AppliedTag) => void) {
+  if (!onDropSpecies) return {};
+  return {
+    onDragOver: (e: React.DragEvent<HTMLButtonElement>) => {
+      if (!e.dataTransfer.types.includes(SPECIES_DRAG_TYPE)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    },
+    onDrop: (e: React.DragEvent<HTMLButtonElement>) => {
+      const tag = parseSpeciesDrag(e.dataTransfer.getData(SPECIES_DRAG_TYPE));
+      if (!tag) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onDropSpecies(index, tag);
+    },
+  };
 }
 
 function burstSpan(b: Burst): string {

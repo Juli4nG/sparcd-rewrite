@@ -150,6 +150,32 @@ Given('an open upload is listed in History', async ({ app }) => {
   await expect(app.page.getByRole('button', { name: 'Resume' })).toBeVisible();
 });
 
+Given('the user resumes it and the upload lands as partial', async ({ app }) => {
+  app.notes.putsBeforeResume = app.s3.puts.length;
+  await resumeFromHistory(app);
+  await app.waitForRunPhase('partial', 120_000);
+});
+
+When('the user navigates away from the Upload step', async ({ app }) => {
+  await app.gotoSection('Settings');
+});
+
+When('the tab regains visibility or the browser comes back online', async ({ app }) => {
+  app.s3.putHooks.length = 0;
+  app.notes.putsBeforeAutomaticRetry = app.s3.puts.length;
+  await app.page.evaluate(() => window.dispatchEvent(new Event('online')));
+});
+
+Then('the partial run retries automatically without any user interaction', async ({ app }) => {
+  await expect.poll(
+    () => app.s3.puts.slice(app.notes.putsBeforeAutomaticRetry as number)
+      .some((put) => put.key.endsWith('UploadComplete.json')),
+    { timeout: 120_000 },
+  ).toBe(true);
+  await app.gotoSection('History');
+  await expect(app.page.getByText('complete', { exact: true })).toBeVisible();
+});
+
 When('it is resumed', async ({ app }) => {
   app.s3.putHooks.length = 0;
   app.notes.putsBeforeResume = app.s3.puts.length;
@@ -559,4 +585,20 @@ Then('repeated clicks never start two runs at once', async ({ app }) => {
   await retry.click();
   await expect(app.runPhase()).toHaveText('partial');
   await expect(app.page.getByText(/Couldn't resume this upload/)).toHaveCount(1);
+});
+
+// --- picker cancel fallback (issue #68) ------------------------------------
+
+When('the folder picker is opened and dismissed without selecting a folder', async ({ app }) => {
+  await app.gotoSection('History');
+  await app.dismissFallbackPickerWithoutCancel();
+  // Click Resume — takes the <input webkitdirectory> fallback path because
+  // showDirectoryPicker was removed by the preceding step. The test shim
+  // restores focus from inside input.click(), before the click handler returns,
+  // matching the production ordering that previously lost this event.
+  await app.page.getByRole('button', { name: 'Resume' }).first().click();
+});
+
+Then('the Resume button becomes available again', async ({ app }) => {
+  await expect(app.page.getByRole('button', { name: 'Resume' }).first()).toBeEnabled();
 });

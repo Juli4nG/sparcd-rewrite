@@ -17,6 +17,7 @@ import { TimeShiftModal } from '../components/TimeShiftModal';
 import { BulkTimeShiftModal } from '../components/BulkTimeShiftModal';
 import { PerImageTime } from '../components/PerImageTime';
 import { SpeciesLoupe } from '../components/SpeciesLoupe';
+import { KeyConflictDialog } from '../components/KeyConflictDialog';
 import { ImageAdjustments } from '../components/ImageAdjustments';
 import { cssFilter, NEUTRAL, type Adjustments } from '../lib/adjustments';
 import { Overview, type PickMods, type ViewKind } from '../components/Overview';
@@ -26,6 +27,7 @@ import { rangeSet, toggleIndex, burstIndexSet } from '../lib/selection';
 import { effectiveOf, type Effective } from '../lib/effective';
 import { sortIndices, type SortField, type SortDir } from '../lib/sortImages';
 import { findFilenameMatches } from '../lib/imageSearch';
+import { parseSpeciesDrag, SPECIES_DRAG_TYPE } from '../lib/speciesDrag';
 import {
   useDraftStore,
   dirtyCount,
@@ -34,7 +36,13 @@ import {
   type BulkTimeTarget,
   type UploadCtx,
 } from '../lib/drafts';
-import { useKeyBindings, effectiveKey, conflictingKeyOwners } from '../lib/keys';
+import {
+  activeKeyProfile,
+  conflictingKeyOwners,
+  effectiveKey,
+  normalizeBindableEventKey,
+  useKeyBindings,
+} from '../lib/keys';
 import { useLocalBatch, saveLocalTags } from '../lib/localBatch';
 import { localTagImages } from '../lib/localWorkspace';
 import { DEFAULT_SPECIES } from '../lib/defaultSpecies';
@@ -283,7 +291,9 @@ export function Tag() {
     }
   }, [pendingSnapshots, clearPendingSnapshots]);
 
-  const { overrides, assignKey, clearKey } = useKeyBindings();
+  const overrides = useKeyBindings((state) => activeKeyProfile(state).overrides);
+  const assignKey = useKeyBindings((state) => state.assignKey);
+  const clearKey = useKeyBindings((state) => state.clearKey);
   const speciesList = localRecord ? DEFAULT_SPECIES : species.data?.species ?? [];
 
   const bindingFor = (sci: string): string | null => {
@@ -302,18 +312,14 @@ export function Tag() {
   }, [speciesList, overrides]);
 
   const captureKey = (scientificName: string, key: string) => {
-    const species = speciesList.find((candidate) => candidate.scientificName === scientificName);
-    if (!species) return;
-    const conflictingNames = new Set(
-      conflictingKeyOwners(speciesList, scientificName, key, overrides),
-    );
-    const conflicts = speciesList.filter((candidate) =>
-      conflictingNames.has(candidate.scientificName),
-    );
+    const target = speciesList.find((candidate) => candidate.scientificName === scientificName);
+    if (!target) return;
+    const owners = new Set(conflictingKeyOwners(speciesList, scientificName, key, overrides));
+    const conflicts = speciesList.filter((candidate) => owners.has(candidate.scientificName));
     if (conflicts.length) {
       setPendingKeyConflict({
         scientificName,
-        commonName: species.commonName,
+        commonName: target.commonName,
         key,
         conflicts,
       });
@@ -327,13 +333,14 @@ export function Tag() {
     assignKey(
       pendingKeyConflict.scientificName,
       pendingKeyConflict.key,
-      pendingKeyConflict.conflicts.map((species) => species.scientificName),
+      pendingKeyConflict.conflicts.map((owner) => owner.scientificName),
     );
     setPendingKeyConflict(null);
   };
 
   const pushRecent = (sci: string) =>
     setRecent((r) => [sci, ...r.filter((x) => x !== sci)].slice(0, RECENT_LIMIT));
+  const [selectedSpecies, setSelectedSpecies] = useState<string | null>(null);
 
   // Operations target the selection when one exists, else the focused image.
   const targetsOf = (): TagTarget[] => {
@@ -357,7 +364,28 @@ export function Tag() {
     if (tag.scientificName) pushRecent(tag.scientificName);
   };
 
+  const applyIncrementAt = (index: number, tag: AppliedTag) => {
+    // A drop is spatial: it updates only the image under the drop zone, even
+    // if a multi-image selection still exists.
+    const image = list[index];
+    if (!image) return;
+    incrementSpeciesFn(
+      ctx,
+      [
+        {
+          mediaPath: image.key,
+          deploymentId: image.deploymentId,
+          base: { observations: image.baseObservations },
+        },
+      ],
+      tag,
+    );
+    if (tag.scientificName) pushRecent(tag.scientificName);
+  };
+
   const applyIncrement = (tag: AppliedTag) => {
+    // Keyboard bindings are selection-scoped, like the panel's explicit add
+    // control. Keep this separate from spatial drag/drop targeting.
     const targets = targetsOf();
     if (!targets.length) return;
     incrementSpeciesFn(ctx, targets, tag);
@@ -428,8 +456,8 @@ export function Tag() {
     setSelected(new Set());
   };
 
-  // On-screen questionable toggle mirrors the `x` key: act on the selection (or
-  // the focused image), flipping off the focused image's current state.
+  // On-screen questionable toggle mirrors Shift+Space: act on the selection
+  // (or the focused image), flipping off the focused image's current state.
   const toggleQuestionable = () => {
     const targets = targetsOf();
     if (!targets.length || !current) return;
@@ -770,6 +798,7 @@ export function Tag() {
                   onPick={pick}
                   onSelectBurst={selectBurst}
                   onDrill={drill}
+                  onDropSpecies={applyIncrementAt}
                 />
               </div>
             </div>
@@ -808,6 +837,7 @@ export function Tag() {
               onPrev={() => gotoImage(focus - 1)}
               onNext={() => gotoImage(focus + 1)}
               onToggleQuestionable={toggleQuestionable}
+              onDropSpecies={(tag) => applyIncrementAt(focus, tag)}
             />
             <SpeciesPanel {...speciesPanelProps()} />
           </div>
@@ -848,7 +878,9 @@ export function Tag() {
       {zoomSpecies && <SpeciesLoupe species={zoomSpecies} onClose={closeLoupe} />}
       {pendingKeyConflict && (
         <KeyConflictDialog
-          conflict={pendingKeyConflict}
+          keyName={pendingKeyConflict.key}
+          targetName={pendingKeyConflict.commonName}
+          ownerNames={pendingKeyConflict.conflicts.map((owner) => owner.commonName)}
           onConfirm={confirmKeyReassignment}
           onCancel={() => setPendingKeyConflict(null)}
         />
@@ -862,6 +894,8 @@ export function Tag() {
       species: speciesList,
       onApply: apply,
       onZoom: openLoupe,
+      selectedSpecies,
+      onSelectSpecies: setSelectedSpecies,
       filter,
       onFilterChange: setFilter,
       filterRef,
@@ -917,6 +951,7 @@ function FocusPane({
   onPrev,
   onNext,
   onToggleQuestionable,
+  onDropSpecies,
 }: {
   current: TagImage | undefined;
   eff: Effective | null;
@@ -930,6 +965,7 @@ function FocusPane({
   onPrev: () => void;
   onNext: () => void;
   onToggleQuestionable: () => void;
+  onDropSpecies: (tag: AppliedTag) => void;
 }) {
   // View-only display adjustments live here so they reset to neutral when the
   // user leaves Focus (this component unmounts) and stay sticky while paging
@@ -939,9 +975,29 @@ function FocusPane({
   const isVideo = !!current && isVideoImage(current);
   const showAdjust = !!current && !isVideo;
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
   return (
     <div className="flex flex-col min-h-[55svh] lg:min-h-0 bg-paper">
-      <div className="relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden">
+      <div
+        className={`relative flex-1 min-h-0 grid place-items-center p-4 overflow-hidden${isDragOver ? ' ring-2 ring-inset ring-accent' : ''}`}
+        data-testid="focus-drop-zone"
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(SPECIES_DRAG_TYPE)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+          setIsDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDragOver(false);
+          const tag = parseSpeciesDrag(e.dataTransfer.getData(SPECIES_DRAG_TYPE));
+          if (tag) onDropSpecies(tag);
+        }}
+      >
         {current && (
           <FocusImage
             objectKey={current.key}
@@ -964,12 +1020,12 @@ function FocusPane({
       </div>
       {current && eff && (
         <div className="shrink-0 border-t border-rule bg-panel px-5 py-3 flex items-center gap-5 flex-wrap">
-          {/* On-screen prev/next mirror j/k for touch; desktop keeps the keys. */}
+          {/* On-screen prev/next mirror the arrow keys for touch. */}
           <div className="lg:hidden flex items-center gap-2">
             <button
               onClick={onPrev}
               className="min-h-11 min-w-11 grid place-items-center text-[18px] leading-none border border-rule text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              title="Previous image (k)"
+              title="Previous image (Arrow Up)"
               aria-label="Previous image"
             >
               ‹
@@ -977,7 +1033,7 @@ function FocusPane({
             <button
               onClick={onNext}
               className="min-h-11 min-w-11 grid place-items-center text-[18px] leading-none border border-rule text-inkSoft hover:text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-              title="Next image (j)"
+              title="Next image (Arrow Down)"
               aria-label="Next image"
             >
               ›
@@ -1007,14 +1063,14 @@ function FocusPane({
             )}
             {/* The applied species themselves render in the SpeciesPanel header
                 strip on the right; the footer keeps only questionable + Detag. */}
-            {/* Touch toggle mirrors the `x` key; desktop relies on the hotkey
+            {/* Touch toggle mirrors Shift+Space; desktop relies on the hotkey
                 and the display-only badge above. */}
             <button
               onClick={onToggleQuestionable}
               disabled={!current}
               aria-pressed={eff.questionable}
               className="lg:hidden min-h-11 text-[13px] border border-rule px-2.5 text-inkSoft hover:text-ink hover:border-ink disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent aria-pressed:bg-mark aria-pressed:border-warn aria-pressed:text-warn"
-              title="Toggle questionable (x)"
+              title="Toggle questionable (Shift+Space)"
             >
               {eff.questionable ? '✓ Questionable' : 'Questionable'}
             </button>
@@ -1261,85 +1317,6 @@ function Lightbox({
   );
 }
 
-function KeyConflictDialog({
-  conflict,
-  onConfirm,
-  onCancel,
-}: {
-  conflict: PendingKeyConflict;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const onCancelRef = useRef(onCancel);
-  onCancelRef.current = onCancel;
-  const owners = conflict.conflicts.map((species) => species.commonName).join(', ');
-
-  useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null;
-    confirmRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onCancelRef.current();
-      } else if (event.key === 'Tab') {
-        event.preventDefault();
-        const movingFromConfirm = document.activeElement === confirmRef.current;
-        if (movingFromConfirm) cancelRef.current?.focus();
-        else confirmRef.current?.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      previousFocus?.focus();
-    };
-  }, []);
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4">
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="key-conflict-title"
-        aria-describedby="key-conflict-description"
-        className="w-full max-w-md border-2 border-warn bg-paper p-5 shadow-xl"
-      >
-        <h2 id="key-conflict-title" className="font-display text-[20px] font-[600] text-ink">
-          Key already assigned
-        </h2>
-        <p id="key-conflict-description" className="mt-3 text-[14px] text-ink">
-          <kbd className="border border-ink px-1.5 font-mono uppercase">{conflict.key}</kbd> is
-          already assigned to {owners}. Reassign it to {conflict.commonName}?
-        </p>
-        <p className="mt-2 text-[13px] text-warn">
-          Reassigning will clear the existing {conflict.conflicts.length === 1 ? 'binding' : 'bindings'}.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onCancel}
-            className="min-h-11 border border-rule px-4 text-[13px] text-ink hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Cancel
-          </button>
-          <button
-            ref={confirmRef}
-            type="button"
-            onClick={onConfirm}
-            className="min-h-11 border border-warn bg-warn px-4 text-[13px] font-[600] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Reassign key
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 function ZoomControls({
   onIn,
   onOut,
@@ -1500,9 +1477,10 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
       s.setCapturingFor(null);
       return;
     }
-    if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const key = normalizeBindableEventKey(e);
+    if (key) {
       e.preventDefault();
-      s.captureKey(s.capturingFor, e.key.toLowerCase());
+      s.captureKey(s.capturingFor, key);
       s.setCapturingFor(null);
     }
     return;
@@ -1539,6 +1517,25 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     return;
   }
 
+  // User-assigned printable species keys take precedence over built-in
+  // single-character shortcuts. This makes every alphanumeric and symbol key
+  // usable; assigning j/k/x/? intentionally displaces that app shortcut.
+  const current = s.list[s.focus];
+  const printableKey = normalizeBindableEventKey(e);
+  const speciesAction = printableKey
+    ? s.keyMap.get(printableKey)
+    : undefined;
+  if (speciesAction && current) {
+    e.preventDefault();
+    if (e.repeat) return;
+    s.applyIncrement({
+      scientificName: speciesAction.species.scientificName,
+      commonName: speciesAction.species.commonName,
+      count: 1,
+    });
+    return;
+  }
+
   // `?` toggles the cheatsheet (it arrives as Shift+/, so handle before the
   // Shift/modifier guards below).
   if (e.key === '?') {
@@ -1563,33 +1560,32 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
   }
   if (e.altKey) return;
 
-  // Shift+J / Shift+K — burst navigation.
-  if (e.shiftKey) {
-    const k = e.key.toLowerCase();
-    if (k === 'j') {
-      e.preventDefault();
-      gotoBurst(s, 1);
-    } else if (k === 'k') {
-      e.preventDefault();
-      gotoBurst(s, -1);
-    }
-    return;
-  }
-
-  const current = s.list[s.focus];
   switch (e.key) {
-    case 'j':
     case 'ArrowDown':
       e.preventDefault();
       focusMove(s, s.focus + 1);
       return;
-    case 'k':
     case 'ArrowUp':
       e.preventDefault();
       focusMove(s, s.focus - 1);
       return;
+    case 'PageDown':
+      e.preventDefault();
+      gotoBurst(s, 1);
+      return;
+    case 'PageUp':
+      e.preventDefault();
+      gotoBurst(s, -1);
+      return;
     case ' ':
       e.preventDefault();
+      if (e.shiftKey) {
+        const targets = s.targetsOf();
+        if (!targets.length || !current) return;
+        const anchorDraft = s.drafts[current.key];
+        s.setQuestionableMany(s.ctx, targets, !anchorDraft?.questionable);
+        return;
+      }
       s.filterRef.current?.focus();
       return;
     case 'Enter':
@@ -1602,22 +1598,5 @@ function handleKey(e: KeyboardEvent, s: HandlerState): void {
     case 'Escape':
       if (s.selected.size) s.setSelected(new Set());
       return;
-    case 'x':
-    case 'X': {
-      const targets = s.targetsOf();
-      if (!targets.length || !current) return;
-      // Anchor on the focused image so a mixed selection resolves predictably.
-      const anchorDraft = s.drafts[current.key];
-      s.setQuestionableMany(s.ctx, targets, !anchorDraft?.questionable);
-      return;
-    }
   }
-
-  const action = s.keyMap.get(e.key.toLowerCase());
-  if (!action || !current) return;
-  e.preventDefault();
-  // e.repeat fires while a key is held — ignore it so each intentional press
-  // counts as exactly one increment.
-  if (e.repeat) return;
-  s.applyIncrement({ scientificName: action.species.scientificName, commonName: action.species.commonName, count: 1 });
 }

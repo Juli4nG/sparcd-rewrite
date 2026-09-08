@@ -5,7 +5,7 @@ const testDir = defineBddConfig({
   features: 'features/**/*.feature',
   steps: 'features/steps/**/*.ts',
   outputDir: 'features/.features-gen',
-  tags: 'not @manual',
+  tags: 'not @manual and not @cross-tool',
   missingSteps: 'fail-on-gen',
 });
 

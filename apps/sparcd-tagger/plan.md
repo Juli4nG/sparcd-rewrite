@@ -470,7 +470,7 @@ visual design:
   into the grid.
 - **Keybindings** — global handler with no per-render re-binding; actions
   dispatch synchronously and update local (Zustand) state optimistically,
-  so `J`/`K`/species keys never wait on I/O. Dexie writes are debounced and
+  so navigation/species keys never wait on I/O. Dexie writes are debounced and
   off the hot path.
 - **Selection at scale** — selection state is index ranges, not per-cell
   React state, so selecting a 2,000-image burst doesn't re-render 2,000
@@ -738,13 +738,13 @@ button is one keystroke.
 
 | Key | Action |
 |---|---|
-| `J` / `K` | Next / previous image |
-| `Shift+J` / `Shift+K` | Next / previous burst |
+| `Arrow Down` / `Arrow Up` | Next / previous image |
+| `PgDn` / `PgUp` | Next / previous burst |
 | `Space` | Open species autocomplete |
 | `Enter` | Confirm selection |
 | _assigned key_ | Apply the species/label bound to that key (user-assignable, persistent per species; suppressed while the filter box is focused) |
 | `G` | Default binding for **Ghost** (empty / false-trigger frame) — a normal pre-bound label, common enough to ship bound |
-| `X` | Mark as "questionable" |
+| `Shift+Space` | Mark as "questionable" |
 | `Cmd/Ctrl+A` | Select current burst |
 | `Cmd/Ctrl+S` | Save draft (auto-saves anyway; manual confirm) |
 | `?` | Toggle cheatsheet modal |
@@ -754,7 +754,7 @@ button is one keystroke.
 | Phase | Scope | S3 writes |
 |---|---|---|
 | **P0** | **Shared Vitest contract harness first**: root/package `test` scripts, Java-baseline and `sparcd-web` fixture data, uploader-empty fixture, tagger-edited golden fixture; extend `@sparcd/camtrap` with v016 readers/merge helpers; prove uploader output parses and tagger merge output matches golden files; scaffold app, reuse the four existing shared packages (`s3-safe`, `camtrap`, `types`, `auth-ui`); shared Connection screen; existing uploader collection discovery (`sparcd-<uuid>` candidates); image viewer reads from a discovered collection; verify browser CORS for list/get/head; validate `Settings/species.json` path/shape | None |
-| **P1** | Single-image tag editing; Dexie drafts; J/K nav; species autocomplete | None |
+| **P1** | Single-image tag editing; Dexie drafts; arrow-key nav; species autocomplete | None |
 | **P2** | Sequence/burst grouping; full keyboard set; cheatsheet modal | None |
 | **P3** | Batch tagging (multi-select); recovery view (local-only at this stage) | None |
 | **P4** | Compatibility sync: immutable pre-write snapshots plus conditional canonical replacement of `<uploadPrefix>/media.csv`, `<uploadPrefix>/observations.csv`, and `<uploadPrefix>/UploadMeta.json`; explicit per-object resume journal for partial three-file writes; snapshot-prefix +1s re-stamp on 412; verified that `.sparcd-tagger-snapshots/` does not change the reader image list; only after manual review of `replaceIfUnchanged`, mocked wrapper tests, fixture-backed merge tests, and endpoint-specific CORS/PUT preflight | First writes, dry-run by default |
@@ -921,8 +921,9 @@ thumb + tag status + unsaved dot per row) · focus view (full presigned image +
 filename/timestamp/deployment + applied-tag chip + Detag) · species panel.
 Keyboard: a **single global `keydown` handler attached once**, reading the
 latest state through a ref so it never re-binds per render (perf contract). Wired
-`J`/`K` (+ arrows) next/prev, `Space` focus filter, `Enter` apply top filter
-match + blur, `X` questionable, `G` Ghost, and **assigned species keys**; all
+`Arrow Down`/`Arrow Up` next/prev, `PgDn`/`PgUp` bursts, `Space` focus filter,
+`Enter` apply top filter match + blur, `Shift+Space` questionable, `G` Ghost,
+and **assigned species keys**; all
 species/label keys are suppressed while the filter box is focused, and an
 "assign key" capture mode swallows the next key. The Chrome sync pill now shows
 `unsynced edits` when dirty drafts exist (still local-only; P4 owns real sync).

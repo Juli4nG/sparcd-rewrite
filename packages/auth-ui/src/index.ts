@@ -17,3 +17,29 @@ export {
 export type { PersistedConnection } from './session';
 export { loadSharedTheme, saveSharedTheme } from './theme';
 export type { Theme } from './theme';
+export {
+  KEYBINDING_STORAGE_KEY,
+  KEYBINDING_STORAGE_VERSION,
+  emptyRevisionedProfile,
+  acknowledgeRevisionedSpeciesProfile,
+  diffRevisionedSpecies,
+  keyProfileId,
+  mergeAndWriteRevisionedProfiles,
+  mergeRevisionedProfile,
+  mergeRevisionedProfiles,
+  nextKeyProfileRevision,
+  pendingRevisionedSpeciesProfile,
+  parseRevisionedProfiles,
+  readRevisionedProfiles,
+  serializeRevisionedProfiles,
+  shouldReconcileSpeciesProfile,
+  stageRevisionedSpeciesProfile,
+} from './speciesKeyProfiles';
+export type {
+  PendingSpeciesChange,
+  Revision,
+  RevisionedKeyProfile,
+  RevisionedKeyProfiles,
+  SpeciesDiff,
+  SpeciesKeyConfig,
+} from './speciesKeyProfiles';

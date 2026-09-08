@@ -102,7 +102,7 @@ Feature: Connect the tagger to a collection store and manage the session
   Scenario: Disconnecting clears this browser's local tagger data
     Given there are no unsaved local edits
     When Disconnect is chosen
-    Then the local drafts, upload records, sync journals and key bindings on this machine are cleared
+    Then local work is cleared while scoped keybinding profiles are retained
     And the tagger returns to the connection screen ready for the next person
 
   @unmapped

@@ -49,24 +49,20 @@ Then('the Focus view keeps the list alongside the enlarged image', async ({ page
 // --- Keyboard navigation ----------------------------------------------------
 
 When('the next-image or previous-image key is pressed', async ({ page }) => {
-  await page.keyboard.press('j');
+  await page.keyboard.press('ArrowDown');
 });
 
 Then('focus moves one image in that direction', async ({ page }) => {
-  await expect(positionReadout(page)).toHaveText('2 / 6');
-  await page.keyboard.press('k');
-  await expect(positionReadout(page)).toHaveText('1 / 6');
-  await page.keyboard.press('ArrowDown');
   await expect(positionReadout(page)).toHaveText('2 / 6');
   await page.keyboard.press('ArrowUp');
   await expect(positionReadout(page)).toHaveText('1 / 6');
 });
 
 Then('it stops at the first and last image of the upload', async ({ page }) => {
-  await page.keyboard.press('k');
-  await page.keyboard.press('k');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
   await expect(positionReadout(page)).toHaveText('1 / 6');
-  for (let i = 0; i < 10; i++) await page.keyboard.press('j');
+  for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
   await expect(positionReadout(page)).toHaveText('6 / 6');
 });
 
@@ -74,7 +70,7 @@ Then('any selection is cleared by the move', async ({ page }) => {
   await gridCell(page, 'IMG001.JPG').click();
   await gridCell(page, 'IMG003.JPG').click({ modifiers: ['Shift'] });
   await expect(positionReadout(page)).toHaveText('3 selected');
-  await page.keyboard.press('j');
+  await page.keyboard.press('ArrowDown');
   await expect(positionReadout(page)).toHaveText('4 / 6');
   await expect(selectedTiles(page)).toHaveCount(0);
 });
@@ -101,9 +97,22 @@ Then('the Focus view shows that image', async ({ page }) => {
 Then('on-screen previous and next controls move between images there', async ({ page }) => {
   // The paging buttons are the touch affordance, shown below the lg breakpoint.
   await page.setViewportSize(TOUCH);
-  await page.getByRole('button', { name: 'Next image' }).click();
+  const previous = page.getByRole('button', { name: 'Previous image' });
+  const next = page.getByRole('button', { name: 'Next image' });
+  const questionable = page.getByRole('button', { name: 'Questionable' });
+  await expect(previous).toHaveAttribute('title', 'Previous image (Arrow Up)');
+  await expect(next).toHaveAttribute('title', 'Next image (Arrow Down)');
+  await expect(questionable).toHaveAttribute('title', 'Toggle questionable (Shift+Space)');
+  for (const retired of [
+    'Previous image (k)',
+    'Next image (j)',
+    'Toggle questionable (x)',
+  ]) {
+    await expect(page.locator(`[title="${retired}"]`)).toHaveCount(0);
+  }
+  await next.click();
   await expect(positionReadout(page)).toHaveText('4 / 6');
-  await page.getByRole('button', { name: 'Previous image' }).click();
+  await previous.click();
   await expect(positionReadout(page)).toHaveText('3 / 6');
   await page.setViewportSize(DESKTOP);
 });
@@ -307,11 +316,11 @@ Then('the whole band can be selected in one action', async ({ page }) => {
 Then('the burst-forward and burst-back keys jump between bands', async ({ page }) => {
   await page.keyboard.press('Escape');
   await gridCell(page, 'IMG001.JPG').click();
-  await page.keyboard.press('Shift+J');
+  await page.keyboard.press('PageDown');
   await expect(positionReadout(page)).toHaveText('3 / 6');
-  await page.keyboard.press('Shift+J');
+  await page.keyboard.press('PageDown');
   await expect(positionReadout(page)).toHaveText('4 / 6');
-  await page.keyboard.press('Shift+K');
+  await page.keyboard.press('PageUp');
   await expect(positionReadout(page)).toHaveText('3 / 6');
 });
 
@@ -350,6 +359,12 @@ Then('the shortcut reference is shown, grouped by navigating, tagging and select
   await expect(cheatsheet(page).getByRole('heading', { name: 'Navigate' })).toBeVisible();
   await expect(cheatsheet(page).getByRole('heading', { name: 'Tag', exact: true })).toBeVisible();
   await expect(cheatsheet(page).getByRole('heading', { name: 'Select & save' })).toBeVisible();
+  for (const key of ['↓', '↑', 'PgDn', 'PgUp', '⇧Space']) {
+    await expect(cheatsheet(page).getByText(key, { exact: true })).toBeVisible();
+  }
+  for (const retired of ['J', 'K', '⇧J', '⇧K', 'X']) {
+    await expect(cheatsheet(page).getByText(retired, { exact: true })).toHaveCount(0);
+  }
 });
 
 Then(
@@ -373,7 +388,7 @@ Then('no tagging or navigation keystroke takes effect while it is open', async (
   await page.keyboard.press('?');
   await expect(cheatsheet(page)).toBeVisible();
   const position = await positionReadout(page).textContent();
-  await page.keyboard.press('j');
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('d');
   await expect(positionReadout(page)).toHaveText(position!);
   await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
@@ -451,7 +466,7 @@ Then(
     ] as const) {
       await page.getByRole('button', { name: open }).click();
       await page.keyboard.press('d');
-      await page.keyboard.press('j');
+      await page.keyboard.press('ArrowDown');
       await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
       await expect(positionReadout(page)).toHaveText(position!);
       await page.getByRole('button', { name: close, exact: true }).first().click();
@@ -460,4 +475,3 @@ Then(
     await expect(gridCell(page, 'IMG002.JPG')).not.toContainText('Mule Deer');
   },
 );
-

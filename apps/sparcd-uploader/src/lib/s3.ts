@@ -16,6 +16,8 @@ import { LOCATIONS_KEY, parseLocations, type LocationsParse } from './locations'
 import { sha256Hex } from './hash';
 import type { EditCanonical, EditIO, EditRole } from './publishedEdit';
 
+const SPECIES_KEY = 'Settings/species.json';
+
 // Client-side bucket allowlists are not a security boundary in a static app.
 // They exist only because the wrapper requires an explicit scope; the connected
 // user's IAM policy and bucket CORS decide what the app can actually touch.
@@ -71,11 +73,12 @@ const PROBE_CONCURRENCY = 16;
 async function firstBucketWithMarker(
   client: SafeS3Client,
   buckets: string[],
+  marker = LOCATIONS_KEY,
 ): Promise<string | null> {
   for (let i = 0; i < buckets.length; i += PROBE_CONCURRENCY) {
     const chunk = buckets.slice(i, i + PROBE_CONCURRENCY);
     const hits = await Promise.all(
-      chunk.map((bucket) => client.statObject(bucket, LOCATIONS_KEY).then(() => true, () => false)),
+      chunk.map((bucket) => client.statObject(bucket, marker).then(() => true, () => false)),
     );
     const at = hits.indexOf(true);
     if (at >= 0) return chunk[at];
@@ -142,6 +145,38 @@ export async function fetchLocations(
   const text = new TextDecoder().decode(bytes);
   const parsed = parseLocations(text);
   return { ...parsed, settingsBucket };
+}
+
+export type SpeciesKeyConfig = {
+  scientificName: string;
+  commonName: string;
+  keyBinding: string | null;
+};
+
+/** Read only the species fields needed for the shared keybinding profile check. */
+export async function fetchSpeciesKeyConfig(cfg: S3Config): Promise<SpeciesKeyConfig[]> {
+  const client = getClient(cfg);
+  const buckets = (await client.listBuckets()).sort(
+    (a, b) => settingsRank(a) - settingsRank(b) || a.localeCompare(b),
+  );
+  const settingsBucket = await firstBucketWithMarker(client, buckets, SPECIES_KEY);
+  if (!settingsBucket) throw new Error(`No readable settings bucket contains "${SPECIES_KEY}"`);
+  const bytes = await client.getObject(settingsBucket, SPECIES_KEY);
+  const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  if (!Array.isArray(parsed)) throw new Error(`Expected "${SPECIES_KEY}" to contain an array`);
+  return parsed.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const value = entry as Record<string, unknown>;
+    if (typeof value.scientificName !== 'string' || !value.scientificName.trim()) return [];
+    return [{
+      scientificName: value.scientificName.trim(),
+      commonName:
+        typeof value.name === 'string' && value.name.trim()
+          ? value.name.trim()
+          : value.scientificName.trim(),
+      keyBinding: typeof value.keyBinding === 'string' ? value.keyBinding : null,
+    }];
+  });
 }
 
 // Collection discovery, keying, and the `CollectionRef` shape live in
@@ -338,4 +373,3 @@ export async function listPublishedUploads(cfg: S3Config, ref: CollectionRef): P
     .filter((u): u is PublishedUpload => u !== null)
     .sort((a, b) => b.stamp.localeCompare(a.stamp)); // newest first
 }
-

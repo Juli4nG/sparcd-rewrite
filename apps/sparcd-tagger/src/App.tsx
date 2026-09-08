@@ -8,6 +8,7 @@ import { Settings } from './sections/Settings';
 import { Recovery } from './sections/Recovery';
 import { Placeholder } from './sections/Placeholder';
 import { localBatchId, useLocalBatch } from './lib/localBatch';
+import { SpeciesKeyBindingGate } from './components/SpeciesKeyBindingGate';
 
 // Dev-only, non-secret prefill (endpoint only). Secrets are never prefilled.
 const devEndpoint = import.meta.env.VITE_SPARCD_S3_ENDPOINT as string | undefined;
@@ -42,9 +43,11 @@ export function App() {
     if (localStatus === 'loading') return <LocalBatchBoot />;
     if (localStatus === 'missing') return <LocalBatchMissing />;
     return (
-      <Chrome>
-        <Tag />
-      </Chrome>
+      <SpeciesKeyBindingGate>
+        <Chrome>
+          <Tag />
+        </Chrome>
+      </SpeciesKeyBindingGate>
     );
   }
 
@@ -55,19 +58,21 @@ export function App() {
   }
 
   return (
-    <Chrome>
-      {section === 'browse' && <Browse />}
-      {section === 'tag' &&
-        (selectedUploadPrefix ? (
-          <Tag />
-        ) : (
-          <Placeholder title="Tag workspace" phase="P1 – P3">
-            Choose an upload in Browse to start tagging.
-          </Placeholder>
-        ))}
-      {section === 'history' && <Recovery />}
-      {section === 'settings' && <Settings />}
-    </Chrome>
+    <SpeciesKeyBindingGate>
+      <Chrome>
+        {section === 'browse' && <Browse />}
+        {section === 'tag' &&
+          (selectedUploadPrefix ? (
+            <Tag />
+          ) : (
+            <Placeholder title="Tag workspace" phase="P1 – P3">
+              Choose an upload in Browse to start tagging.
+            </Placeholder>
+          ))}
+        {section === 'history' && <Recovery />}
+        {section === 'settings' && <Settings />}
+      </Chrome>
+    </SpeciesKeyBindingGate>
   );
 }
 

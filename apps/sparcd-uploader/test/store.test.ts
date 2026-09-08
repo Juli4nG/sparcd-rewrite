@@ -64,7 +64,7 @@ function snapshot(sessionId: string, phase: UploadPhase): UploadSnapshot {
     totalBytes: 0,
     log: [],
     bucket: 'sparcd-test',
-    collectionUuid: '',
+    collectionUuid: 'collection',
   };
 }
 

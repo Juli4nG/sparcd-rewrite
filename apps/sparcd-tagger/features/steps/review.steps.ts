@@ -188,7 +188,7 @@ Then('every selected image is left with no species', async ({ page }) => {
 // --- Questionable -----------------------------------------------------------
 
 When('it is marked questionable', async ({ page }) => {
-  await page.keyboard.press('x');
+  await page.keyboard.press('Shift+Space');
 });
 
 Then("the image's tile carries a questionable marker", async ({ page }) => {
@@ -196,14 +196,14 @@ Then("the image's tile carries a questionable marker", async ({ page }) => {
 });
 
 Then('the marker can be toggled off again', async ({ page }) => {
-  await page.keyboard.press('x');
+  await page.keyboard.press('Shift+Space');
   await expect(gridCell(page, 'IMG002.JPG').locator('[title="questionable"]')).toHaveCount(0);
 });
 
 Then('a selection of images can be marked in one action', async ({ page }) => {
   await gridCell(page, 'IMG001.JPG').click();
   await gridCell(page, 'IMG003.JPG').click({ modifiers: ['Shift'] });
-  await page.keyboard.press('x');
+  await page.keyboard.press('Shift+Space');
   for (const f of ['IMG001.JPG', 'IMG002.JPG', 'IMG003.JPG']) {
     await expect(gridCell(page, f).locator('[title="questionable"]')).toBeVisible();
   }

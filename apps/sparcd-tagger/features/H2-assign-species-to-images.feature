@@ -9,7 +9,8 @@ Feature: Assign species to images in an upload
   """
 
   As-built: a persistent species panel sits beside the images. A species can
-  be applied by clicking its row or by pressing the key bound to it. An
+  be selected by clicking its tile and applied with its add control, by
+  drag-and-drop, or by pressing the key bound to it. An
   identification applies to the focused image, or to every selected image when
   a selection exists. Identifications are held locally until they are synced.
 
@@ -30,11 +31,11 @@ Feature: Assign species to images in an upload
     Then the species list is headed "Available species"
 
   @H2
-  Scenario: Clicking a species identifies the focused image
+  Scenario: Clicking a species tile highlights it without identifying an image
     Given an image is focused
-    When a species row is used
-    Then that species is recorded on the focused image with a count of one
-    And the image's tile shows the species instead of "untagged"
+    When a species tile is selected
+    Then that species tile remains highlighted
+    And selecting the species has not changed the focused image
 
   @H2
   Scenario: An image can carry more than one species
@@ -86,6 +87,46 @@ Feature: Assign species to images in an upload
     When a key is assigned to it and that key is pressed with an image focused
     Then that species is recorded on the image
     And the assigned key is shown on the species row
+
+  @H2
+  Scenario Outline: Printable bindings, including former shortcuts, take precedence
+    Given an image is focused
+    When "<key>" is assigned to a species and pressed
+    Then that species is recorded on the image
+    And the keyboard shortcut reference is not opened
+
+    Examples:
+      | key |
+      | ?   |
+      | !   |
+      | j   |
+      | k   |
+      | x   |
+      | 7   |
+
+  @H2
+  Scenario: Alt or Option modified keys remain available to the browser
+    Given an image is focused
+    When an Alt-modified printable key is pressed while assigning a species key
+    Then key capture remains active and no key is assigned
+    When a Shift-produced symbol is assigned to the species
+    And that binding is pressed with Alt or Option
+    Then the species is not recorded on the image
+    When that binding is pressed without Alt or Option
+    Then that species is recorded on the image
+
+  @H2
+  Scenario: Alphabetic bindings are case insensitive
+    Given an image is focused
+    When a lowercase alphabetic key is assigned to a species
+    And the uppercase form of that binding is pressed
+    Then that species is recorded on the image
+
+  @H2
+  Scenario: An unassigned printable shortcut retains its built-in behavior
+    Given an image is focused
+    When the unassigned keyboard-help shortcut is pressed
+    Then the keyboard shortcut reference is opened
 
   @H2
   Scenario: Keys already bound in the desktop app work without re-assignment
@@ -142,6 +183,17 @@ Feature: Assign species to images in an upload
     And the cleared key remains absent after reopening the tagger
 
   @H2
+  Scenario: Server vocabulary changes require durable acknowledgement
+    Given the saved user profile contains an older species configuration
+    When the tagger is refreshed with its restored session
+    Then no vocabulary reconciliation is performed
+    When the user explicitly logs in with the current server vocabulary
+    Then a blocking message lists added, removed and updated species
+    And reopening again does not bypass the required acknowledgement
+    When the vocabulary change is acknowledged
+    Then removed-species bindings are pruned and the message stays acknowledged
+
+  @H2
   Scenario: A species reference image can be enlarged before deciding
     Given a species row carries a reference image
     When its enlarge control is used
@@ -159,6 +211,38 @@ Feature: Assign species to images in an upload
     # is unreachable: whenever the panel renders, an image is focused (focus
     # defaults to the first image and every path clamps it into range), and an
     # upload with no taggable images never renders the panel. See CORRECTIONS.md.
+
+  @H2
+  Scenario: Dragging a species tile onto the focused image adds it at count one
+    Given an image is focused
+    When a species tile is dragged onto the image area in the Focus view
+    Then that species is recorded on the focused image with a count of one
+    And the image's tile shows the species instead of "untagged"
+
+  @H2
+  Scenario: Dragging a species already on the image increments its count
+    Given the focused image already carries one species
+    When that species tile is dragged onto the image area in the Focus view
+    Then that species' count is incremented by one
+
+  @H2
+  Scenario: Dropping on the focused image does not apply to the current selection
+    Given several images are selected
+    When a species tile is dragged onto the image area in the Focus view
+    Then only the focused image receives the dropped species
+
+  @H2
+  Scenario: Dropping a species on an Overview image identifies only that image
+    Given several images are selected
+    When a species tile is dragged onto a different image tile in Overview
+    Then only the Overview image under the drop receives the species
+
+  @H2
+  Scenario: Dragging the Ghost tile onto an image replaces its species with Ghost
+    Given the focused image already carries one species
+    When the Ghost tile is dragged onto the image area in the Focus view
+    Then the image is recorded as an empty or false-trigger frame
+    And any real species previously on that image is removed
 
   @H2
   Scenario: New identifications are held locally until they are synced

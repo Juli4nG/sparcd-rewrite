@@ -1,4 +1,4 @@
-# DRAFT — for review, not yet agreed. Generated 2026-08-06 from apps/sparcd-uploader (src/sections/Assign.tsx, src/components/CollectionPicker.tsx, src/components/DeploymentPicker.tsx, src/components/MetadataPreview.tsx, src/lib/s3.ts, src/lib/locations.ts, src/lib/useCollections.ts, test/locations.test.ts).
+# DRAFT — for review, not yet agreed. Generated 2026-08-06 from apps/sparcd-uploader (src/sections/Assign.tsx, src/components/CollectionPicker.tsx, src/sections/Upload.tsx, src/lib/s3.ts, src/lib/locations.ts, src/lib/useCollections.ts, test/locations.test.ts).
 
 Feature: Assign a batch to a collection and a camera location
 
@@ -113,10 +113,15 @@ Feature: Assign a batch to a collection and a camera location
     Then it is stored as the upload's description in the upload's metadata file
 
   @unmapped
-  Scenario: The exact metadata that will be written can be previewed before uploading
+  Scenario: Exact deployment metadata is not exposed before uploading
     Given a collection, a deployment and an uploader identity have been chosen
-    When the preview is opened
-    Then the tool shows the exact contents of the upload metadata file and of the deployments, media and observations tables it will write
-    And it shows the storage path the batch will land under
-    And building the preview writes nothing
-    # The preview is opt-in because building it re-derives the whole bundle.
+    When the Upload step is opened
+    Then no bundle Preview control or generated metadata contents are offered
+
+  @unmapped
+  Scenario: Removing Preview does not change the published metadata bundle
+    Given a collection, a deployment and an uploader identity have been chosen
+    When the Upload step is opened
+    And a real upload is started and completes
+    Then the complete metadata bundle is still written
+    # The diagnostic preview remains available only on debug/metadata-preview.

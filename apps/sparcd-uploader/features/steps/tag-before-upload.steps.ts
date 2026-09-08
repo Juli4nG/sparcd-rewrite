@@ -93,6 +93,49 @@ Then("the browser goes to the Tagger carrying the batch's id", async ({ app }) =
   expect(app.page.url()).toContain(`/sparcd-exploration/tagger/?batch=${app.notes.flipId}`);
 });
 
+// --- real cross-tool hand-off through the issue #73 proxy ------------------
+
+When('"Tag species first" is chosen through the unified dev origin', async ({ app }) => {
+  await tagButton(app).click();
+  await app.page.waitForURL(/localhost:5310\/sparcd-exploration\/tagger\/\?batch=/);
+  app.notes.flipId = new URL(app.page.url()).searchParams.get('batch')!;
+});
+
+Then('the real Tagger opens the batch written by the Uploader', async ({ app }) => {
+  await expect(app.page.getByText('Local batch · 4 files · from Uploader')).toBeVisible();
+  for (const name of ['IMG_0001.JPG', 'IMG_0002.JPG', 'IMG_0003.JPG', 'CLIP_0001.MP4']) {
+    await expect(app.page.locator(`button[title="${name}"]`)).toBeVisible();
+  }
+  const [record] = await app.readFlipRecords();
+  expect(record.id).toBe(app.notes.flipId);
+  expect(record.files).toHaveLength(4);
+});
+
+When('Coyote is applied in the real Tagger', async ({ app }) => {
+  const image = app.page.locator('button[title="IMG_0002.JPG"]');
+  await image.click();
+  const coyote = app.page.locator('div.group').filter({ hasText: 'Canis latrans' }).first();
+  await coyote.locator('button[title^="Apply"]').click();
+  await expect(image).toContainText('Coyote');
+});
+
+When('the real Tagger hands the batch back', async ({ app }) => {
+  await app.page.getByRole('button', { name: 'Done · back to Uploader' }).click();
+  await app.page.waitForURL(/localhost:5310\/sparcd-exploration\/uploader\/\?flip=/);
+  // A navigation resets the fake picker. Re-selecting the original dragged
+  // folder is the real UI's expected return path and does not seed IndexedDB.
+  await app.seedPickedFolder(app.lastSpecs);
+  await app.page.getByRole('button', { name: 'Choose folder' }).click();
+  await expect(app.fileListPane()).toBeVisible();
+});
+
+Then('the Uploader receives Coyote from the shared hand-off record', async ({ app }) => {
+  await app.expectStep('Inspect');
+  const rows = await app.listedFiles();
+  const image = rows.find((row) => row.name === 'IMG_0002.JPG');
+  expect(image?.species).toBe('Coyote×1');
+});
+
 // --- coming back ------------------------------------------------------------
 
 Given('a batch was tagged in the Tagger and handed back', async ({ app }) => {

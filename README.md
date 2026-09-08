@@ -85,8 +85,8 @@ packages/
 ```sh
 pnpm install                                  # installs turbo and JS workspaces
 
-pnpm --filter sparcd-uploader dev             # Vite dev server (uploader)
-pnpm --filter sparcd-tagger dev               # Vite dev server (tagger)
+pnpm --filter sparcd-uploader dev             # Vite dev server (uploader)  :5311
+pnpm --filter sparcd-tagger dev               # Vite dev server (tagger)    :5312
 
 pnpm --filter @sparcd/sparcd-explorer install:py   # uv sync for the marimo app
 pnpm dev --filter @sparcd/sparcd-explorer     # marimo edit --watch
@@ -97,6 +97,20 @@ Or run every app's `dev` task at once:
 ```sh
 pnpm dev
 ```
+
+**Testing features that cross the uploader–tagger boundary** (shared IndexedDB,
+flip hand-off, etc.) requires both tools on the same browser origin. The
+`sparcd-dev-proxy` app starts a Vite proxy on port 5310 that routes both paths
+to their own Vite servers. `pnpm dev` starts it automatically alongside the
+other apps — navigate to either tool through the proxy port:
+
+```
+http://localhost:5310/sparcd-exploration/uploader/
+http://localhost:5310/sparcd-exploration/tagger/
+```
+
+Hot-module reload works through the proxy because both routes explicitly
+forward WebSocket upgrade requests to their Vite server.
 
 The Vite apps prefill the S3 endpoint from a gitignored
 `apps/<name>/.env` (`VITE_SPARCD_S3_ENDPOINT`). Credentials are never

@@ -182,9 +182,11 @@ Then('it is not offered for manual entry', async ({ app }) => {
 Then("the camera's time is what gets stored", async ({ app }) => {
   await app.page.locator('input[type="datetime-local"]').nth(1).fill('2026-05-05T05:05:05');
   await app.continueToUpload();
-  await app.page.getByRole('button', { name: /Click to preview the generated bundle files/ }).click();
-  await app.page.getByRole('button', { name: 'media.csv' }).click();
-  const csv = await app.page.locator('pre').innerText();
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await app.waitForRunPhase('done');
+  const rows = writtenCsvRows(app, 'media.csv');
+  const csv = rows.flat().join(',');
   // Bear Canyon is America/Phoenix (UTC-7, no DST): 12:00 → 19:00Z.
   expect(csv).toContain('2026-07-01T19:00:00');
   expect(csv).not.toContain('2026-05-05T05:05:05');

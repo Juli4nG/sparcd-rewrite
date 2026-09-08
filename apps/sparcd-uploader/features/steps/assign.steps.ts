@@ -15,6 +15,14 @@ import {
   VALID_LOCATION_NAMES,
 } from './fixtures-data';
 
+const METADATA_NAMES = [
+  'deployments.csv',
+  'media.csv',
+  'observations.csv',
+  'UploadMeta.json',
+  'UploadComplete.json',
+];
+
 Given('a scanned batch has passed the Inspect step', async ({ app }) => {
   await app.connect();
   await app.dropFolder(standardBatch());
@@ -245,7 +253,7 @@ Then('no deployment can be chosen until it can be read', async ({ app }) => {
   await expect(app.continueButton()).toBeDisabled();
 });
 
-// --- identity, description, preview ----------------------------------------
+// --- identity, description, and production preview privacy -----------------
 
 When('an uploader identity is typed', async ({ app }) => {
   await app.setUploader('Ada Lovelace');
@@ -268,45 +276,49 @@ When('a description is entered', async ({ app }) => {
 
 Then("it is stored as the upload's description in the upload's metadata file", async ({ app }) => {
   await app.continueToUpload();
-  await app.page.getByRole('button', { name: /Click to preview the generated bundle files/ }).click();
-  await expect(app.page.getByRole('button', { name: 'UploadMeta.json' })).toBeVisible();
-  await expect(app.page.locator('pre')).toContainText('"description": "South ridge, July retrieval"');
+  await app.dryRunCheckbox().uncheck();
+  await app.startRun();
+  await app.waitForRunPhase('done');
+  const uploadMeta = app.s3.puts.find((put) => put.key.endsWith('UploadMeta.json'));
+  expect(uploadMeta?.body).toContain('"description": "South ridge, July retrieval"');
 });
 
 Given('a collection, a deployment and an uploader identity have been chosen', async ({ app }) => {
   await app.chooseDeployment('Bear Canyon');
   await app.setUploader('Ada Lovelace');
   await expect(app.collectionTrigger()).toContainText(COLLECTION_A_NAME);
-  app.notes.putsBefore = app.s3.puts.length;
 });
 
-When('the preview is opened', async ({ app }) => {
+When('the Upload step is opened', async ({ app }) => {
   await app.continueToUpload();
-  await app.page.getByRole('button', { name: /Click to preview the generated bundle files/ }).click();
-  await expect(app.page.locator('pre').first()).toBeVisible();
 });
 
 Then(
-  'the tool shows the exact contents of the upload metadata file and of the deployments, media and observations tables it will write',
+  'no bundle Preview control or generated metadata contents are offered',
   async ({ app }) => {
-    await expect(app.page.locator('pre')).toContainText('"uploadUser": "ada-lovelace"');
-    await app.page.getByRole('button', { name: 'deployments.csv' }).click();
-    await expect(app.page.locator('pre')).toContainText(`${UUID_A}:BEAR1`);
-    await app.page.getByRole('button', { name: 'media.csv' }).click();
-    await expect(app.page.locator('pre')).toContainText('IMG_0001.JPG');
-    await app.page.getByRole('button', { name: 'observations.csv' }).click();
-    await expect(app.page.locator('pre')).toContainText('blank');
+    await expect(app.page.getByRole('heading', { name: 'Preview', exact: true })).toHaveCount(0);
+    await expect(app.page.getByRole('button', { name: /preview/i })).toHaveCount(0);
+    for (const name of METADATA_NAMES) {
+      await expect(app.page.getByRole('button', { name, exact: true })).toHaveCount(0);
+    }
+    await expect(app.page.locator('pre')).toHaveCount(0);
+    await expect(app.page.getByText(/32\.4|-110\.7/)).toHaveCount(0);
   },
 );
 
-Then('it shows the storage path the batch will land under', async ({ app }) => {
-  await expect(app.page.getByText(/landing under/)).toContainText(
-    `Collections/${UUID_A}/Uploads/`,
+Then('the complete metadata bundle is still written', async ({ app }) => {
+  const metadata = app.s3.puts.filter((put) =>
+    METADATA_NAMES.some((name) => put.key.endsWith(name)),
   );
-  await expect(app.page.getByText(/landing under/)).toContainText('_ada-lovelace/');
-});
-
-Then('building the preview writes nothing', async ({ app }) => {
-  expect(app.s3.puts.length).toBe(app.notes.putsBefore as number);
-  expect(app.s3.puts).toHaveLength(0);
+  expect(metadata.map((put) => put.key.split('/').pop())).toEqual(METADATA_NAMES);
+  expect(metadata.every((put) => put.body.length > 0)).toBe(true);
+  expect(metadata.find((put) => put.key.endsWith('deployments.csv'))?.body).toContain(
+    `${UUID_A}:BEAR1`,
+  );
+  expect(metadata.find((put) => put.key.endsWith('deployments.csv'))?.body).toContain('32.4');
+  expect(metadata.find((put) => put.key.endsWith('media.csv'))?.body).toContain('IMG_0001.JPG');
+  expect(metadata.find((put) => put.key.endsWith('observations.csv'))?.body).toContain('blank');
+  expect(metadata.find((put) => put.key.endsWith('UploadMeta.json'))?.body).toContain(
+    '"uploadUser": "ada-lovelace"',
+  );
 });

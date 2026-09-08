@@ -35,6 +35,16 @@ Feature: Identify species before the batch is uploaded
     # The batch is rebuilt from the hand-off on the way back and never examined
     # a second time, so anything left behind here is lost for good.
 
+  @cross-tool
+  Scenario: The real Tagger reads and returns the Uploader hand-off through the unified dev origin
+    When "Tag species first" is chosen through the unified dev origin
+    Then the real Tagger opens the batch written by the Uploader
+    When Coyote is applied in the real Tagger
+    And the real Tagger hands the batch back
+    Then the Uploader receives Coyote from the shared hand-off record
+    # No step seeds sparcd-flip directly: the Uploader creates the record, the
+    # Tagger reads and updates it, and the Uploader consumes it on return.
+
   @A1
   Scenario: Tags made in the Tagger come back on the batch
     Given a batch was tagged in the Tagger and handed back

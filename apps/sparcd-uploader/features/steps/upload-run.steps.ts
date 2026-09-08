@@ -588,6 +588,46 @@ Then('the retry is recorded in the activity log', async ({ app }) => {
   expect(await app.logText()).toMatch(/failed [^\s]*IMG_0002\.JPG/);
 });
 
+Given("the browser's navigator.onLine flag is stuck reporting offline", async ({ app }) => {
+  await app.page.evaluate(() => {
+    const state = window as unknown as { offlineClockOffset: number; actualDateNow: () => number };
+    state.offlineClockOffset = 0;
+    state.actualDateNow = Date.now.bind(Date);
+    Date.now = () => state.actualDateNow() + state.offlineClockOffset;
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+  });
+});
+
+Given('ordinary focus events do not correct the stuck flag', async ({ app }) => {
+  expect(await app.page.evaluate(() => navigator.onLine)).toBe(false);
+});
+
+When(
+  'the run has waited through several poll intervals with no change to the flag',
+  async ({ app }) => {
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+    await expect.poll(() => app.logText()).toContain('waiting for network');
+    for (let elapsed = 30_000; elapsed <= 90_000; elapsed += 30_000) {
+      await app.page.evaluate(() => {
+        const state = window as unknown as { offlineClockOffset: number };
+        state.offlineClockOffset += 30_000;
+        window.dispatchEvent(new Event('focus'));
+      });
+    }
+  },
+);
+
+Then('it lets one upload attempt proceed anyway', async ({ app }) => {
+  await expect.poll(() => mediaPuts(app).length, { timeout: 10_000 }).toBeGreaterThan(0);
+  expect(await app.logText()).toContain('navigator.onLine stuck false');
+});
+
+Then('if that attempt succeeds the run completes normally', async ({ app }) => {
+  await app.waitForRunPhase('done', 120_000);
+  expect(await app.page.evaluate(() => navigator.onLine)).toBe(false);
+});
+
 Given("a file's upload is refused for lack of permission", async ({ app }) => {
   await rescanFromUpload(app, manyJpegs(24));
   // Pin the lanes so the abort has files left to skip — adaptive would be free
@@ -628,6 +668,54 @@ Then(
     await expect(
       app.page.getByText(/aborted after 10 file failures — the problem looks systemic, not per-file/).first(),
     ).toBeVisible();
+  },
+);
+
+Given(
+  'a run aborts systemically while some lanes are waiting for the network',
+  async ({ app }) => {
+    await rescanFromUpload(app, manyJpegs(4));
+    await app.pinConcurrency(4);
+    await app.page.evaluate(() => {
+      Math.random = () => 1;
+    });
+
+    let markOffline!: () => void;
+    const offline = new Promise<void>((resolve) => { markOffline = resolve; });
+    app.s3.putHooks.push(async (_bucket, key) => {
+      if (key.endsWith('IMG_0000.JPG')) {
+        await app.page.evaluate(() => {
+          Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+        });
+        markOffline();
+        return { status: 503, code: 'ServiceUnavailable', message: 'try later' };
+      }
+      if (key.endsWith('IMG_0001.JPG')) {
+        await offline;
+        // Let the sibling enter retry backoff before this fatal response makes
+        // the supervisor abort every lane.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return { status: 403, code: 'AccessDenied', message: 'Access Denied' };
+      }
+      return undefined;
+    });
+
+    app.notes.systemicAbortStartedAt = Date.now();
+    await app.dryRunCheckbox().uncheck();
+    await app.startRun();
+  },
+);
+
+Then('the error screen is shown immediately', async ({ app }) => {
+  await app.waitForRunPhase('error', 10_000);
+  await expect(app.page.getByText(/Access Denied|AccessDenied|Forbidden|403/).first()).toBeVisible();
+});
+
+Then(
+  'the run does not wait for the network to return before reporting the failure',
+  async ({ app }) => {
+    expect(Date.now() - (app.notes.systemicAbortStartedAt as number)).toBeLessThan(10_000);
+    expect(await app.page.evaluate(() => navigator.onLine)).toBe(false);
   },
 );
 

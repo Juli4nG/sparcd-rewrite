@@ -335,10 +335,10 @@ When('Disconnect is chosen', async ({ page }) => {
 });
 
 Then(
-  'the local drafts, upload records, sync journals and key bindings on this machine are cleared',
+  'local work is cleared while scoped keybinding profiles are retained',
   async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
-    expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings'))).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings'))).not.toBeNull();
     expect(await readStore(page, 'drafts')).toHaveLength(0);
     expect(await readStore(page, 'uploads')).toHaveLength(0);
     expect(await readStore(page, 'syncJournals')).toHaveLength(0);
@@ -382,4 +382,3 @@ async function openWorkspaceFromBrowse(page: import('@playwright/test').Page): P
   await expect(page.getByRole('button', { name: 'Sync…' })).toBeVisible();
   await expect(page.locator('button[title="IMG001.JPG"]')).toBeVisible();
 }
-

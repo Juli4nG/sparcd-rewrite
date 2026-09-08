@@ -9,10 +9,10 @@ const GROUPS: { title: string; rows: Shortcut[] }[] = [
   {
     title: 'Navigate',
     rows: [
-      { keys: ['J', '↓'], action: 'Next image' },
-      { keys: ['K', '↑'], action: 'Previous image' },
-      { keys: ['⇧J'], action: 'Next burst' },
-      { keys: ['⇧K'], action: 'Previous burst' },
+      { keys: ['↓'], action: 'Next image' },
+      { keys: ['↑'], action: 'Previous image' },
+      { keys: ['PgDn'], action: 'Next burst' },
+      { keys: ['PgUp'], action: 'Previous burst' },
       { keys: ['Enter'], action: 'Open focused image (Overview)' },
     ],
   },
@@ -23,7 +23,7 @@ const GROUPS: { title: string; rows: Shortcut[] }[] = [
       { keys: ['Enter'], action: 'Add top filter match (add-only)' },
       { keys: ['key'], action: 'Add the species bound to that key' },
       { keys: ['✕'], action: 'Chip ✕ removes one; Detag clears all' },
-      { keys: ['X'], action: 'Mark questionable' },
+      { keys: ['⇧Space'], action: 'Mark questionable' },
     ],
   },
   {

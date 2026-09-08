@@ -45,9 +45,11 @@ Coverage notes for the as-built uploader feature files.
   abandoned upload publishes no metadata, so nothing sees it. There is no
   notification mechanism.
 - **F4**, **H1**, **H2**, **H3** — nothing in the uploader corresponds. F4
-  (sensitive-species locations) has **no implementation whatsoever**: the
-  deployment CSV, the media paths and the preview all carry precise coordinates
-  with no sensitivity concept. H1–H3 belong to the tagger.
+  (sensitive-species locations) has **no implementation whatsoever**: published
+  deployment metadata still carries precise coordinates with no sensitivity
+  concept. The production uploader deliberately offers no metadata preview;
+  its diagnostic implementation lives only on `debug/metadata-preview`. H1–H3
+  belong to the tagger.
 
 ## Deliberately skipped
 

@@ -40,6 +40,40 @@ one vCPU — so h3 stays enabled but is not the default assumption. Its case is
 lossy, high-RTT field networks, which is exactly where these uploads often
 start.
 
+## Measured (2026-09-03, inside Jetstream2 → the same proxy)
+
+Client `sparcd-bench-bio-01` (m3.medium, same JS2 project as the proxy),
+0.3 ms to the object store, 250 × 4 MiB synthetic JPEGs per run, two repeats
+per configuration. Browser rows drive the real uploader headless; native rows
+are rclone. Settled MB/s, both repeats.
+
+| Path | Proto | Origins | Lanes | Browser | Native |
+|---|---|---|---|---|---|
+| js2:8001 direct | — | 1 | 32 | — | 199 / 206 |
+| JS2 via proxy | h2 | 1 | 16 | 226 / 186 | — |
+| JS2 via proxy | h2 | 1 | 32 | 272 / 211 | 186 / 192 |
+| JS2 via proxy | h2 | 1 | 64 | 230 / 212 | — |
+| JS2 via proxy | h2 | 4 | 16 | 223 / 191 | — |
+| JS2 via proxy | h2 | 4 | 32 | 277 / 210 | 239 / 233 |
+| JS2 via proxy | h2 | 4 | 64 | 227 / 292 | — |
+| JS2 via proxy | h3 | 1 / 4 | 32 | 58 / 56 / 57 / 57 | — |
+
+From inside the datacenter the curve is flat: every HTTP/2 point from one
+origin at 16 lanes to four origins at 64 lanes lands between 186 and 292 MB/s,
+and the spread between two repeats of one configuration is as wide as the
+spread across the grid. One origin and four overlap completely. The browser
+matches native rclone, and the m3.tiny proxy adds no measurable latency and
+never became the limit on h2. The ceiling is the object store itself, at
+roughly 200–290 MB/s. Origins and lanes buy nothing here because the
+per-connection congestion window is not the constraint on a 0.3 ms path.
+HTTP/3 pins at 56–58 MB/s whatever the origins or lanes, which is that
+one-vCPU proxy doing userspace QUIC.
+
+The knee is 32 lanes on one origin: 16 underruns slightly, 64 never beats 32.
+Raising the shipped 32-lane cap is not justified. In-cloud it buys nothing,
+and volunteers on a WAN are bounded by per-connection capacity, where extra
+lanes on the same origin do not help and extra origins do.
+
 ## How sharding is spelled
 
 Two ways to hand out extra origins, both supported by the same config:

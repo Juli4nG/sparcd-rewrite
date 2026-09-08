@@ -1,5 +1,4 @@
-import { defineConfig, type UserConfig } from 'vite';
-import type { InlineConfig } from 'vitest/node';
+import { configDefaults, defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -10,7 +9,7 @@ const pkg = (name: string, entry: string) =>
 
 export default defineConfig({
   test: {
-    exclude: ['**/node_modules/**', '**/dist/**', 'features/.features-gen/**'],
+    exclude: [...configDefaults.exclude, '**/.features-gen/**'],
   },
   // Served from a subpath on GitHub Pages: culverlab.github.io/sparcd-exploration/tagger/
   base: '/sparcd-exploration/tagger/',
@@ -26,4 +25,4 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-} as UserConfig & { test: InlineConfig });
+});

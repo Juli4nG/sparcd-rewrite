@@ -7,9 +7,11 @@ import {
   connect,
   selectCollection,
   openUpload,
+  enterFocusView,
   focusFrame,
   gridCell,
   speciesRow,
+  speciesTile,
   speciesApply,
   speciesFilter,
   speciesLoupeButton,
@@ -94,8 +96,24 @@ Then('Ghost appears exactly once as a species from the vocabulary', async ({ pag
 
 // --- Applying ---------------------------------------------------------------
 
-When('a species row is used', async ({ page }) => {
-  await speciesApply(page, 'Canis latrans').click();
+When('a species tile is selected', async ({ page }) => {
+  await speciesTile(page, 'Canis latrans').click();
+});
+
+Then('that species tile remains highlighted', async ({ page }) => {
+  await expect(speciesTile(page, 'Canis latrans')).toHaveAttribute('aria-pressed', 'true');
+  await expect(speciesRow(page, 'Canis latrans')).toHaveClass(/ring-accent/);
+});
+
+Then('selecting the species has not changed the focused image', async ({ page }) => {
+  await expect(appliedChip(page, 'Coyote')).toHaveCount(0);
+  const drafts = (await readStore(page, 'drafts')) as {
+    observations: { scientificName: string }[];
+  }[];
+  expect(
+    drafts.some((d) => d.observations.some((o) => o.scientificName === 'Canis latrans')),
+  ).toBe(false);
+  await expect(page.getByText(/unsaved · discard/)).toHaveCount(0);
 });
 
 Then('that species is recorded on the focused image with a count of one', async ({ page }) => {
@@ -298,12 +316,69 @@ Then('the assigned key is shown on the species row', async ({ page }) => {
   await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
 });
 
+When('{string} is assigned to a species and pressed', async ({ page }, key: string) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press(key);
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText(key.toUpperCase());
+  await page.keyboard.press(key);
+});
+
+Then('the keyboard shortcut reference is not opened', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toHaveCount(0);
+});
+
+When('an Alt-modified printable key is pressed while assigning a species key', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('Alt+j');
+});
+
+Then('key capture remains active and no key is assigned', async ({ page }) => {
+  await expect(speciesRow(page, 'Pecari tajacu')).toContainText('press a key…');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveCount(0);
+});
+
+When('a Shift-produced symbol is assigned to the species', async ({ page }) => {
+  await page.keyboard.press('Shift+Digit1');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('!');
+});
+
+When('that binding is pressed with Alt or Option', async ({ page }) => {
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '!', altKey: true, bubbles: true }));
+  });
+});
+
+Then('the species is not recorded on the image', async ({ page }) => {
+  await expect(gridCell(page, 'IMG002.JPG')).not.toContainText('Javelina');
+});
+
+When('that binding is pressed without Alt or Option', async ({ page }) => {
+  await page.keyboard.press('Shift+Digit1');
+});
+
+When('a lowercase alphabetic key is assigned to a species', async ({ page }) => {
+  await speciesAssignKey(page, 'Pecari tajacu').click();
+  await page.keyboard.press('v');
+  await expect(speciesBadge(page, 'Pecari tajacu')).toHaveText('V');
+});
+
+When('the uppercase form of that binding is pressed', async ({ page }) => {
+  await page.keyboard.press('Shift+V');
+});
+
+When('the unassigned keyboard-help shortcut is pressed', async ({ page }) => {
+  await page.keyboard.press('Shift+Slash');
+});
+
+Then('the keyboard shortcut reference is opened', async ({ page }) => {
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible();
+});
+
 Given('the species vocabulary carries a key binding for a species', async ({ page }) => {
   await expect(speciesBadge(page, 'Odocoileus hemionus')).toHaveText('D');
 });
 
 Then('that key applies the species without any local assignment', async ({ page }) => {
-  expect(await page.evaluate(() => localStorage.getItem('sparcd-tagger-keybindings'))).toBeNull();
   await focusFrame(page, 'IMG002.JPG');
   await page.keyboard.press('d');
   await expect(gridCell(page, 'IMG002.JPG')).toContainText('Mule Deer');
@@ -484,6 +559,105 @@ Then('each selected image increments the species from its own count', async ({ p
   expect(count('IMG002.JPG', 'Odocoileus hemionus')).toBe(1);
   expect(count('IMG003.JPG', 'Odocoileus hemionus')).toBe(1);
   expect(count('IMG003.JPG', 'Casper')).toBeUndefined();
+  // Keyboard application is selection-scoped, but must not spill onto an
+  // unselected image as the spatial drag/drop paths deliberately do not.
+  expect(count('IMG005.JPG', 'Odocoileus hemionus')).toBeUndefined();
+  await expect(gridCell(page, 'IMG005.JPG')).not.toContainText('Mule Deer');
+});
+
+Given('the saved user profile contains an older species configuration', async ({ page }) => {
+  await page.evaluate(() => {
+    const key = 'sparcd-tagger-keybindings';
+    const stored = JSON.parse(localStorage.getItem(key)!) as {
+      state: {
+        profiles: Record<
+          string,
+          {
+            overrides: Record<string, string | null>;
+            overrideRevisions: Record<string, { at: number; sequence: number; writer: string }>;
+            acceptedSpecies?: { scientificName: string; commonName: string; keyBinding: string | null }[];
+            acceptedRevision?: { at: number; sequence: number; writer: string };
+            pendingSpeciesChange?: unknown;
+            pendingRevision?: { at: number; sequence: number; writer: string };
+          }
+        >;
+      };
+      version: number;
+    };
+    const profile = Object.entries(stored.state.profiles).find(([id]) => id !== '__legacy__')![1];
+    const revision = { at: Date.now() + 1, sequence: 1, writer: 'bdd-fixture' };
+    profile.overrides['Former species'] = '!';
+    profile.overrideRevisions['Former species'] = revision;
+    profile.acceptedSpecies = [
+      { scientificName: 'Odocoileus hemionus', commonName: 'Old Deer Name', keyBinding: 'M' },
+      { scientificName: 'Former species', commonName: 'Former Species', keyBinding: 'F' },
+    ];
+    profile.acceptedRevision = revision;
+    delete profile.pendingSpeciesChange;
+    profile.pendingRevision = revision;
+    localStorage.setItem(key, JSON.stringify(stored));
+  });
+});
+
+When('the tagger is refreshed with its restored session', async ({ page }) => {
+  await page.reload();
+  await connect(page);
+});
+
+Then('no vocabulary reconciliation is performed', async ({ page }) => {
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
+  const pending = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      state: { profiles: Record<string, { pendingSpeciesChange?: unknown }> };
+    };
+    return Object.values(stored.state.profiles)[0].pendingSpeciesChange;
+  });
+  expect(pending).toBeUndefined();
+});
+
+When('the user explicitly logs in with the current server vocabulary', async ({ page }) => {
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
+  await connect(page);
+  await expect(
+    page.getByRole('alertdialog', { name: 'Species vocabulary has changed' }),
+  ).toBeVisible();
+});
+
+const speciesChangedDialog = (page: Page) =>
+  page.getByRole('alertdialog', { name: 'Species vocabulary has changed' });
+
+Then('a blocking message lists added, removed and updated species', async ({ page }) => {
+  const dialog = speciesChangedDialog(page);
+  await expect(dialog).toContainText('Coyote');
+  await expect(dialog).toContainText('Former Species');
+  await expect(dialog).toContainText('Mule Deer');
+  await expect(dialog.getByRole('button', { name: 'I understand' })).toBeFocused();
+});
+
+Then('reopening again does not bypass the required acknowledgement', async ({ page }) => {
+  await page.reload();
+  await connect(page);
+  await expect(speciesChangedDialog(page)).toBeVisible();
+});
+
+When('the vocabulary change is acknowledged', async ({ page }) => {
+  await speciesChangedDialog(page).getByRole('button', { name: 'I understand' }).click();
+});
+
+Then('removed-species bindings are pruned and the message stays acknowledged', async ({ page }) => {
+  const removed = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('sparcd-tagger-keybindings')!) as {
+      state: { profiles: Record<string, { overrides: Record<string, string | null> }> };
+    };
+    return Object.values(stored.state.profiles)[0].overrides['Former species'];
+  });
+  expect(removed).toBeNull();
+  await page.reload();
+  await connect(page);
+  await expect(speciesChangedDialog(page)).toHaveCount(0);
 });
 
 // --- Loupe ------------------------------------------------------------------
@@ -549,6 +723,71 @@ Then('the workspace states that the upload has no taggable images', async ({ pag
 Then('no species panel is offered', async ({ page }) => {
   await expect(page.getByLabel('Filter species')).toHaveCount(0);
   await expect(page.locator('div.group')).toHaveCount(0);
+});
+
+// --- Drag and drop ----------------------------------------------------------
+
+const focusDropZone = (page: Page) => page.getByTestId('focus-drop-zone');
+
+When('a species tile is dragged onto the image area in the Focus view', async ({ page }) => {
+  await enterFocusView(page);
+  await speciesRow(page, 'Canis latrans').dragTo(focusDropZone(page));
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+});
+
+When('that species tile is dragged onto the image area in the Focus view', async ({ page }) => {
+  await enterFocusView(page);
+  await speciesRow(page, 'Odocoileus hemionus').dragTo(focusDropZone(page));
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+});
+
+When('the Ghost tile is dragged onto the image area in the Focus view', async ({ page }) => {
+  await enterFocusView(page);
+  await ghostRow(page).dragTo(focusDropZone(page));
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+});
+
+When('a species tile is dragged onto a different image tile in Overview', async ({ page }) => {
+  await speciesRow(page, 'Canis latrans').dragTo(gridCell(page, 'IMG005.JPG'));
+});
+
+Then('only the Overview image under the drop receives the species', async ({ page }) => {
+  await expect(positionReadout(page)).toHaveText('3 selected');
+  await waitForDirtyDrafts(page, 1);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const withCoyote = drafts.filter((d) =>
+    d.observations.some((o) => o.scientificName === 'Canis latrans'),
+  );
+  expect(withCoyote).toHaveLength(1);
+  expect(withCoyote[0].mediaPath).toMatch(/IMG005\.JPG$/);
+  expect(withCoyote[0].observations.find((o) => o.scientificName === 'Canis latrans')?.count).toBe(1);
+  await expect(gridCell(page, 'IMG005.JPG')).toContainText('Coyote');
+});
+
+Then("that species' count is incremented by one", async ({ page }) => {
+  await expandApplied(page);
+  // IMG001 carries Mule Deer at count 2 in the fixture; one drag increments to 3.
+  await expect(appliedChip(page, 'Mule Deer').locator('input[type="number"]')).toHaveValue('3');
+});
+
+Then('only the focused image receives the dropped species', async ({ page }) => {
+  await expect(positionReadout(page)).toHaveText('3 selected');
+  await waitForDirtyDrafts(page, 1);
+  const drafts = (await readStore(page, 'drafts')) as {
+    mediaPath: string;
+    observations: { scientificName: string; count: number }[];
+  }[];
+  const withCoyote = drafts.filter((d) =>
+    d.observations.some((o) => o.scientificName === 'Canis latrans'),
+  );
+  expect(withCoyote).toHaveLength(1);
+  expect(withCoyote[0].mediaPath).toMatch(/IMG003\.JPG$/);
+  expect(
+    withCoyote[0].observations.find((o) => o.scientificName === 'Canis latrans')?.count,
+  ).toBe(1);
 });
 
 // --- Local holding ----------------------------------------------------------

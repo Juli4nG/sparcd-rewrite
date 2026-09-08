@@ -11,7 +11,8 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:bdd": "bddgen && playwright test"
+    "test:bdd": "bddgen && playwright test",
+    "test:bdd:cross-tool": "bddgen --config playwright.cross-tool.config.ts && playwright test --config playwright.cross-tool.config.ts"
   },
   "dependencies": {
     "@sparcd/auth-ui": "workspace:*",
