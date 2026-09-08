@@ -57,6 +57,17 @@ Feature: Resume an interrupted upload and retry a failed one
     And the resumed upload's observations.csv matches what a fresh upload would have written
 
   @AL2
+  Scenario: A partial History-resumed run retries automatically when the tab becomes visible again
+    Given an open upload is listed in History
+    And the user resumes it and the upload lands as partial
+    When the user navigates away from the Upload step
+    And the tab regains visibility or the browser comes back online
+    Then the partial run retries automatically without any user interaction
+    # Regression for #58: the auto-resume effect previously lived only in Upload
+    # so navigating away unmounted it and killed the retry. The effect now lives
+    # in App so it survives section navigation.
+
+  @AL2
   Scenario: Retrying the failed files of a partial run completes that same upload
     Given a real upload finished as partial with some files failed
     When "Retry failed files" is chosen
