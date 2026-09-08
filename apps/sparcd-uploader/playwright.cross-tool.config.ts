@@ -29,21 +29,21 @@ export default defineConfig({
     {
       command: 'pnpm dev --port 5321 --strictPort',
       url: 'http://localhost:5321/sparcd-exploration/uploader/',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 120_000,
       env: { VITE_SPARCD_S3_ENDPOINT: '' },
     },
     {
       command: 'pnpm --dir ../sparcd-tagger dev --port 5322 --strictPort',
       url: 'http://localhost:5322/sparcd-exploration/tagger/',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 120_000,
       env: { VITE_SPARCD_S3_ENDPOINT: '' },
     },
     {
       command: 'pnpm --dir ../sparcd-dev-proxy dev',
       url: 'http://localhost:5310/sparcd-exploration/uploader/',
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 120_000,
       env: {
         SPARCD_UPLOADER_DEV_URL: 'http://localhost:5321',
