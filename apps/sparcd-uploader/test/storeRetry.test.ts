@@ -38,6 +38,7 @@ const partial = () => ({
   totalBytes: 1,
   log: [],
   bucket: 'bucket',
+  collectionUuid: '',
 });
 
 const deferred = <T,>() => {
@@ -92,7 +93,11 @@ describe('automatic partial-run retry lifecycle', () => {
     mocks.resumeUpload.mockReturnValue(stale);
 
     const retry = useStore.getState().retryPartialRun();
-    useStore.getState().setActiveRun(replacement);
+    // Simulate another run taking over: cancel clears activeSnap (stale-state
+    // guard in retryPartialRun sees activeSnap changed), then install replacement.
+    useStore.getState().cancelActiveRun();
+    const generation = useStore.getState().beginActiveRun();
+    useStore.getState().setActiveRun(replacement, generation!);
     loaded.resolve({ bundle: {} });
     await retry;
 

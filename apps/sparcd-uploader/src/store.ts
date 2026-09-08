@@ -359,7 +359,6 @@ export const useStore = create<UploaderState>()(
           activeRunGeneration: generation,
           activeRunReserved: true,
           activeRunSource: 'upload',
-          attachedFiles: null,
         });
         return generation;
       },

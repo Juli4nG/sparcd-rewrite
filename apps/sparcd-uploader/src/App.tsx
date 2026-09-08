@@ -74,8 +74,8 @@ export function App() {
   }, [retryPartialRun]);
 
   // Hold a screen wake lock while any run is in flight (including dry runs and
-  // the preparing phase). Lives here (not in
-  // Upload) so it survives the user navigating away mid-upload. The lock is
+  // the preparing phase). Lives here (not in Upload) so it survives the user
+  // navigating away mid-upload. The lock is
   // auto-released by the browser on tab hide, so it's re-acquired on regaining
   // visibility. Generation counter guards against orphaned sentinels when two
   // visibility events fire before either acquire() resolves.
