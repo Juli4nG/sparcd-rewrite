@@ -46,9 +46,11 @@ Feature: Upload and publish a batch
     Then the title-bar pill and tooltip show dry-run while blobs are processing and after completion
 
   @unmapped
-  Scenario: A real upload states what access it needs before it starts
-    Then the tool states that a setup issue on the storage side is not the user's fault
-    And that the collection ID is given to contact an administrator with
+  Scenario: The admin setup guidance note is absent before and after a successful run
+    Given the upload has not been started
+    Then the admin setup guidance note is not visible
+    When a real upload is started and completes
+    Then the admin setup guidance note is not visible
 
   @F1
   Scenario: Every file in the batch is stored under one upload folder in the collection
@@ -108,6 +110,7 @@ Feature: Upload and publish a batch
     Then no metadata files are written
     And the run is reported as partial, stating how many files failed
     And the tool states that the upload is not yet visible and can be completed by retrying the failed files
+    And the admin setup guidance note is shown with the collection ID
 
   @F3
   Scenario: An upload that fails or is abandoned announces nothing
@@ -197,6 +200,7 @@ Feature: Upload and publish a batch
     Given a file's upload is refused for lack of permission
     Then the run stops immediately without working through the remaining files
     And the failure is reported
+    And the admin setup guidance note is shown with the collection ID
 
   @unmapped
   Scenario: Many independent file failures are treated as a systemic problem

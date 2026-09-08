@@ -152,19 +152,16 @@ Then('the run is not recorded in History', async ({ app }) => {
   await expect(app.page.getByText('No uploads yet')).toBeVisible();
 });
 
-Then(
-  "the tool states that a setup issue on the storage side is not the user's fault",
-  async ({ app }) => {
-    await expect(app.page.getByText(/that's usually a setup issue on the storage side/)).toContainText(
-      "not something you did wrong",
-    );
-  },
-);
+Then('the admin setup guidance note is not visible', async ({ app }) => {
+  await expect(app.page.getByText(/Upload failed.*administrator/)).toHaveCount(0);
+});
 
-Then('that the collection ID is given to contact an administrator with', async ({ app }) => {
-  await expect(app.page.getByText(/that's usually a setup issue on the storage side/)).toContainText(
-    `this collection ID: ${UUID_A}`,
-  );
+Then('the admin setup guidance note is shown with the collection ID', async ({ app }) => {
+  const note = app.page.getByText(/Upload failed.*administrator/);
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('CORS policy');
+  await expect(note).toContainText('PUT, HEAD');
+  await expect(note).toContainText(`Collection ID: ${UUID_A}`);
 });
 
 // --- a complete real upload ------------------------------------------------

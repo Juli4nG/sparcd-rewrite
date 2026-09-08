@@ -334,10 +334,10 @@ export function Upload() {
               Test the upload, nothing is written
             </label>
 
-            {!effectiveDryRun && (
+            {snap && (snap.phase === 'error' || snap.phase === 'partial') && !snap.dryRun && (
               <Note
                 tone="warn"
-                message={`If not testing the upload and it fails right away, that's usually a setup issue on the storage side, not something you did wrong. Contact your administrator and give them this collection ID: ${collection.uuid}.`}
+                message={`Upload failed. If it keeps happening, ask your administrator to check: the bucket's CORS policy must allow this web origin for PUT, HEAD, and OPTIONS requests, and the credentials need PUT, HEAD, and LIST permissions on the upload prefix. Collection ID: ${collection.uuid}.`}
               />
             )}
           </>
