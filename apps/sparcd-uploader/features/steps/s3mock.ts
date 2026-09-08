@@ -30,6 +30,7 @@ export type PutHook = (
   key: string,
   body: Buffer,
 ) => S3Error | undefined | Promise<S3Error | undefined>;
+export type HeadHook = (bucket: string, key: string) => S3Error | undefined;
 
 const XMLNS = 'http://s3.amazonaws.com/doc/2006-03-01/';
 
@@ -62,6 +63,7 @@ export class S3Mock {
   unreadableKeys = new Set<string>();
 
   putHooks: PutHook[] = [];
+  headHooks: HeadHook[] = [];
 
   /** Artificial latency on every object write, for observing a run in flight. */
   putDelayMs = 0;
@@ -245,6 +247,15 @@ export class S3Mock {
 
       if (method === 'GET' || method === 'HEAD') {
         (method === 'GET' ? this.gets : this.heads).push(`${bucket}/${key}`);
+        if (method === 'HEAD') {
+          for (const hook of this.headHooks) {
+            const error = hook(bucket, key);
+            if (error) {
+              await fail(error);
+              return;
+            }
+          }
+        }
         if (this.unreadable.has(bucket) || this.unreadableKeys.has(`${bucket}/${key}`)) {
           await fail({ status: 403, code: 'AccessDenied', message: 'Access Denied' });
           return;

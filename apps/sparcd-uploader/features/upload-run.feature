@@ -160,6 +160,26 @@ Feature: Upload and publish a batch
     And the retry is recorded in the activity log
 
   @unmapped
+  Scenario: A transient error during the resume verify pass is retried rather than counted as a file failure
+    Given a resumed run is verifying files already stored in a previous session
+    When the storage service returns a transient error for a verify HEAD request
+    Then the verify is retried with the same backoff as a failed upload
+    And the error is not counted toward the per-run file failure limit
+    # Without this, a single network blip at concurrency 10+ can exhaust
+    # MAX_FILE_FAILURES across all verify lanes simultaneously and trigger
+    # the systemic abort — the same problem #35 fixed on the upload path.
+
+  @unmapped
+  Scenario: The run monitor shows one offline warning per outage, not one per poll tick
+    Given a run pauses because the network is reported offline
+    Then the activity log records the offline wait exactly once
+    When the network returns
+    Then the activity log records the recovery exactly once
+    And no further offline entries appear for that outage
+    # Before this fix, ensureOnline logged inside the poll loop — a 5-minute
+    # outage with 10 lanes produced 100 warning lines in the run monitor.
+
+  @unmapped
   Scenario: A run paused because the browser reports offline still completes if packets actually flow
     Given the browser's navigator.onLine flag is stuck reporting offline
     And ordinary focus events do not correct the stuck flag

@@ -454,43 +454,66 @@ function makeRunner(
     // same wait-don't-fail treatment before it ever reaches the network,
     // not just once the retry loop is already running.
     const ensureOnline = async (): Promise<void> => {
-      const escapeAt = Date.now() + MAX_STUCK_OFFLINE_MS;
-      while (typeof window !== 'undefined' && navigator.onLine === false) {
-        if (cancelled || abort.signal.aborted) throw new Error('cancelled');
-        if (Date.now() >= escapeAt) {
-          // navigator.onLine has stayed false for the bounded wait even after
-          // any focus/online nudges. Let one attempt through and
-          // let the retry/backoff loop be the actual connectivity arbiter —
-          // it handles transient network errors the same way regardless.
-          log('warn', `navigator.onLine stuck false after ${MAX_STUCK_OFFLINE_MS / 1000}s — attempting ${it.key} anyway`);
-          break;
-        }
+      if (typeof window !== 'undefined' && navigator.onLine === false) {
+        // Log once when entering the offline wait, not on every poll tick —
+        // a long outage with many lanes would otherwise flood the run monitor.
         log('warn', `waiting for network to retry ${it.key}`);
-        await waitForOnline(abort.signal);
+        const escapeAt = Date.now() + MAX_STUCK_OFFLINE_MS;
+        let stuck = false;
+        while (navigator.onLine === false) {
+          if (cancelled || abort.signal.aborted) throw new Error('cancelled');
+          if (Date.now() >= escapeAt) {
+            // navigator.onLine has stayed false for the bounded wait even after
+            // any focus/online nudges. Let one attempt through and
+            // let the retry/backoff loop be the actual connectivity arbiter —
+            // it handles transient network errors the same way regardless.
+            log('warn', `navigator.onLine stuck false after ${MAX_STUCK_OFFLINE_MS / 1000}s — attempting ${it.key} anyway`);
+            stuck = true;
+            break;
+          }
+          await waitForOnline(abort.signal);
+        }
+        if (!stuck) log('info', `network back, retrying ${it.key}`);
       }
       if (cancelled || abort.signal.aborted) throw new Error('cancelled');
     };
 
     // A completed blob from a prior run: sanity-check the remote copy before
     // skipping it. Size + recorded SHA-256 metadata is the portable contract.
+    // Transient statObject failures (network blip, 5xx) are retried with the
+    // same backoff as uploads — without this, all verify lanes can trip
+    // MAX_FILE_FAILURES from a single blip and trigger the systemic abort.
     const verifyExisting = async (): Promise<boolean> => {
-      try {
-        const stat = await client.statObject(snap.bucket, it.key);
-        if (stat.size === it.size && stat.metadata.sha256 === it.sha256) {
-          fp.state = 'skipped';
-          snap.uploadedBytes += it.size - fp.loaded;
-          snap.skippedBytes += it.size;
-          fp.loaded = it.size;
-          log('info', `verified, skip: ${it.key}`);
-          emit(true);
-          return true;
+      let attempt = 0;
+      for (;;) {
+        try {
+          const stat = await client.statObject(snap.bucket, it.key);
+          if (stat.size === it.size && stat.metadata.sha256 === it.sha256) {
+            fp.state = 'skipped';
+            snap.uploadedBytes += it.size - fp.loaded;
+            snap.skippedBytes += it.size;
+            fp.loaded = it.size;
+            log('info', `verified, skip: ${it.key}`);
+            emit(true);
+            return true;
+          }
+          log('warn', `remote mismatch: ${it.key}`);
+          return false;
+        } catch (err) {
+          if (isNotFound(err)) {
+            log('warn', `remote missing, re-uploading: ${it.key}`);
+            return false;
+          }
+          if (cancelled || abort.signal.aborted) throw err;
+          if (attempt + 1 >= MAX_ATTEMPTS || !isTransient(err)) throw err;
+          const wait = backoff(attempt);
+          log('warn', `verify retry ${it.key} (attempt ${attempt + 2}) after ${Math.round(wait)}ms`);
+          await sleep(wait);
+          if (cancelled || abort.signal.aborted) throw err;
+          await ensureOnline();
+          attempt++;
         }
-        log('warn', `remote mismatch: ${it.key}`);
-      } catch (err) {
-        if (isNotFound(err)) log('warn', `remote missing, re-uploading: ${it.key}`);
-        else throw err;
       }
-      return false;
     };
 
     if (it.doneAlready) {
