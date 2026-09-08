@@ -411,6 +411,22 @@ export class App {
     }
   }
 
+  /** Dismiss the next fallback file picker synchronously without a cancel
+   * event, matching the ordering in Safari <=16 and Firefox <=90. */
+  async dismissFallbackPickerWithoutCancel(): Promise<void> {
+    await this.page.evaluate(() => {
+      const original = HTMLInputElement.prototype.click;
+      HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+        if (this.type === 'file') {
+          HTMLInputElement.prototype.click = original;
+          window.dispatchEvent(new Event('focus'));
+          return;
+        }
+        original.call(this);
+      };
+    });
+  }
+
   /**
    * Choose a folder through the rendered `<input webkitdirectory>` — the same
    * path the "Choose folder" button takes when the durable picker is absent.

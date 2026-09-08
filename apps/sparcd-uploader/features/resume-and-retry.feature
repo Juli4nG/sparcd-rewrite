@@ -118,6 +118,16 @@ Feature: Resume an interrupted upload and retry a failed one
     Then its live local session cannot be resumed or discarded
 
   @unmapped
+  Scenario: Cancelling the folder picker re-enables Resume on browsers without the cancel event
+    Given an open upload is listed in History
+    And the browser cannot present a folder picker
+    When the folder picker is opened and dismissed without selecting a folder
+    Then the Resume button becomes available again
+    # Regression for #68: on Safari ≤16 / Firefox ≤90 the `cancel` event on
+    # <input type="file"> does not fire, so a window `focus` fallback clears
+    # the guard when the picker closes with no files.
+
+  @unmapped
   Scenario: A retry whose local record cannot be read says so and stays retryable
     Given the local record for a partial run cannot be read
     When "Retry failed files" is chosen
