@@ -53,7 +53,7 @@ Given('an image has a corrected timestamp and meaningful review markers', async 
   await page.getByRole('button', { name: 'Adjust time' }).click();
   await page.getByLabel('Corrected timestamp for this image').fill('2023-12-24 18:45:10');
   await page.getByRole('button', { name: 'Set', exact: true }).click();
-  await page.keyboard.press('x');
+  await page.keyboard.press('Shift+Space');
 });
 
 When('the detailed Overview list is opened', async ({ page }) => {
