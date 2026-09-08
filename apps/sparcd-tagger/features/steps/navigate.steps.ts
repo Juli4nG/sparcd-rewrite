@@ -14,6 +14,7 @@ import {
   imageSearch,
   speciesRow,
   focusFrame,
+  enterFocusView,
 } from './support/world';
 
 const TOUCH = { width: 900, height: 860 };
@@ -44,6 +45,108 @@ Then('the Focus view keeps the list alongside the enlarged image', async ({ page
   await expect(page.locator('.react-transform-component img')).toBeVisible();
   await expect(listRow(page, 'IMG001.JPG')).toBeVisible();
   await expect(listRow(page, 'IMG005.JPG')).toBeVisible();
+});
+
+Given('an image has a corrected timestamp and meaningful review markers', async ({ page }) => {
+  await focusFrame(page, 'IMG002.JPG');
+  await enterFocusView(page);
+  await page.getByRole('button', { name: 'Adjust time' }).click();
+  await page.getByLabel('Corrected timestamp for this image').fill('2023-12-24 18:45:10');
+  await page.getByRole('button', { name: 'Set', exact: true }).click();
+  await page.keyboard.press('Shift+Space');
+});
+
+When('the detailed Overview list is opened', async ({ page }) => {
+  await page.getByRole('button', { name: 'Overview', exact: true }).click();
+  await page.getByRole('button', { name: '☰ List' }).click();
+  await expect(listRow(page, 'IMG002.JPG')).toBeVisible();
+});
+
+Then('list columns follow the Name, Type, Date, Species sort-control order', async ({ page }) => {
+  const tagged = listRow(page, 'IMG001.JPG');
+  expect(await tagged.locator('[data-column]').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('data-column'))))
+    .toEqual(['filename', 'media-type', 'timestamp', 'species', 'markers']);
+  await expect(tagged.locator('[data-column="filename"]')).toHaveAttribute(
+    'aria-label',
+    'Filename: IMG001.JPG',
+  );
+  await expect(tagged.locator('[data-column="species"]')).toHaveAttribute(
+    'aria-label',
+    'Species: Mule Deer ×2',
+  );
+  const untagged = listRow(page, 'IMG002.JPG').locator('[data-column="species"]');
+  await expect(untagged).toHaveText('untagged');
+  await expect(untagged).toHaveAttribute('aria-label', 'Species: untagged');
+  await expect(listRow(page, 'IMG002.JPG')).toHaveAttribute(
+    'aria-label',
+    /Filename: IMG002.JPG; Media type: image; Capture time:.*; Species: untagged/,
+  );
+});
+
+Then('image and video rows identify their media type', async ({ page }) => {
+  await expect(listRow(page, 'IMG001.JPG').locator('[data-column="media-type"]'))
+    .toHaveAttribute('aria-label', 'Media type: image');
+  await expect(listRow(page, 'VID001.MP4').locator('[data-column="media-type"]'))
+    .toHaveAttribute('aria-label', 'Media type: video');
+});
+
+Then('capture timestamps show corrected and unavailable values accurately', async ({ page }) => {
+  const corrected = listRow(page, 'IMG002.JPG').locator('[data-column="timestamp"]');
+  await expect(corrected).toContainText('2023-12-24');
+  await expect(corrected).toContainText('18:45');
+  await expect(corrected).toHaveAttribute('aria-label', /Capture time: 2023-12-24T18:45:10/);
+
+  const unavailable = listRow(page, 'VID001.MP4').locator('[data-column="timestamp"]');
+  await expect(unavailable).toHaveText('—');
+  await expect(unavailable).toHaveAttribute('aria-label', 'Capture time unavailable');
+});
+
+Then('long column values preserve their full accessible text', async ({ page }) => {
+  const row = listRow(page, 'IMG004.JPG');
+  await expect(row.locator('[data-column="filename"]')).toHaveAttribute('title', 'IMG004.JPG');
+  const species = row.locator('[data-column="species"]');
+  await expect(species).toHaveClass(/truncate/);
+  await expect(species).toHaveAttribute('title', 'Mountain Lion +1');
+  await expect(species).toHaveAttribute('aria-label', 'Species: Mountain Lion +1');
+});
+
+Then('row numbers and the old species indicator are absent', async ({ page }) => {
+  const row = listRow(page, 'IMG002.JPG');
+  await expect(row.locator('[data-column="row-number"]')).toHaveCount(0);
+  await expect(row.locator('[data-column="species-indicator"]')).toHaveCount(0);
+});
+
+Then('meaningful edit and questionable markers remain accessible', async ({ page }) => {
+  const markers = listRow(page, 'IMG002.JPG').locator('[data-column="markers"]');
+  await expect(markers.getByLabel('Unsaved edit')).toBeVisible();
+  await expect(markers.getByLabel('Questionable')).toBeVisible();
+  await expect(markers.locator('[title]')).toHaveCount(2);
+});
+
+Then('a narrow Overview keeps filenames visible in its compact rows', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const row = listRow(page, 'IMG002.JPG');
+  const filename = row.locator('[data-column="filename"]');
+  await expect(filename).toBeVisible();
+  expect((await filename.boundingBox())?.width).toBeGreaterThan(80);
+  await expect(row.locator('[data-column="species"]')).toBeVisible();
+  await expect(row.locator('[data-column="media-type"]')).toHaveCount(0);
+  await expect(row.locator('[data-column="timestamp"]')).toHaveCount(0);
+  await expect(row).toHaveAttribute(
+    'aria-label',
+    /Filename: IMG002.JPG; Species: untagged; Unsaved edit/,
+  );
+});
+
+Then('the Focus strip keeps filename and species but omits the detail columns', async ({ page }) => {
+  await page.getByRole('button', { name: 'Focus', exact: true }).click();
+  const row = listRow(page, 'IMG002.JPG');
+  await expect(row.locator('[data-column="filename"]')).toBeVisible();
+  await expect(row.locator('[data-column="species"]')).toHaveText('untagged');
+  await expect(row.locator('[data-column="media-type"]')).toHaveCount(0);
+  await expect(row.locator('[data-column="timestamp"]')).toHaveCount(0);
+  await expect(row.locator('[data-column="markers"]')).toContainText('?');
+  await expect(row.locator('[data-column="markers"] [aria-label="Questionable"]')).toBeVisible();
 });
 
 // --- Keyboard navigation ----------------------------------------------------
