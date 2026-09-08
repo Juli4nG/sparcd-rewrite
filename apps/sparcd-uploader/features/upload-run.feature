@@ -160,6 +160,19 @@ Feature: Upload and publish a batch
     And the retry is recorded in the activity log
 
   @unmapped
+  Scenario: A run paused because the browser reports offline still completes if packets actually flow
+    Given the browser's navigator.onLine flag is stuck reporting offline
+    And ordinary focus events do not correct the stuck flag
+    When the run has waited through several poll intervals with no change to the flag
+    Then it lets one upload attempt proceed anyway
+    And if that attempt succeeds the run completes normally
+    # A VPN or certain network adapters can leave navigator.onLine permanently
+    # false. After a bounded 90-second wait with the flag still false,
+    # ensureOnline bails out and treats the upload attempt itself
+    # as the connectivity test. The retry/backoff loop handles a genuine
+    # network failure the same way it handles any transient error.
+
+  @unmapped
   Scenario: A permission failure stops the whole run at once
     Given a file's upload is refused for lack of permission
     Then the run stops immediately without working through the remaining files

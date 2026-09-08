@@ -188,6 +188,11 @@ const backoff = (attempt: number) => Math.random() * (BASE_BACKOFF_MS * 2 ** att
 // permanently wrong), so this is the escape hatch that keeps a stuck reading
 // from hanging the run forever instead of just delaying it.
 const ONLINE_POLL_MS = 30_000;
+// After this much elapsed time with navigator.onLine still false, ensureOnline
+// lets one upload attempt proceed. Elapsed time—not a count of poll wakeups—is
+// deliberate: repeated focus events restart the poll timer and must not starve
+// the escape indefinitely.
+const MAX_STUCK_OFFLINE_MS = 3 * ONLINE_POLL_MS;
 
 function waitForOnline(signal: AbortSignal): Promise<void> {
   // Strictly `false`, not falsy: `navigator.onLine` is `undefined` in plain
@@ -199,27 +204,16 @@ function waitForOnline(signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     let poll: ReturnType<typeof setInterval> | null = null;
     const cleanup = () => {
-      window.removeEventListener('online', onDone);
-      window.removeEventListener('focus', onDone);
+      window.removeEventListener('online', onEvent);
+      window.removeEventListener('focus', onEvent);
       if (poll !== null) clearInterval(poll);
       signal.removeEventListener('abort', onAbort);
     };
-    // Resolving here doesn't assert the network is actually back — the
-    // caller re-checks `navigator.onLine` itself and calls back in if it's
-    // still reporting offline. This just guarantees that recheck happens
-    // periodically and whenever the tab regains focus, so a stuck or
-    // never-fired `online` event can't wait forever.
-    const onDone = () => {
-      cleanup();
-      resolve();
-    };
-    const onAbort = () => {
-      cleanup();
-      reject(new Error('cancelled'));
-    };
-    window.addEventListener('online', onDone);
-    window.addEventListener('focus', onDone);
-    poll = setInterval(onDone, ONLINE_POLL_MS);
+    const onEvent = () => { cleanup(); resolve(); };
+    const onAbort = () => { cleanup(); reject(new Error('cancelled')); };
+    window.addEventListener('online', onEvent);
+    window.addEventListener('focus', onEvent);
+    poll = setInterval(onEvent, ONLINE_POLL_MS);
     signal.addEventListener('abort', onAbort);
     // Close the race between the preflight check and listener registration.
     if (signal.aborted) onAbort();
@@ -460,8 +454,17 @@ function makeRunner(
     // same wait-don't-fail treatment before it ever reaches the network,
     // not just once the retry loop is already running.
     const ensureOnline = async (): Promise<void> => {
+      const escapeAt = Date.now() + MAX_STUCK_OFFLINE_MS;
       while (typeof window !== 'undefined' && navigator.onLine === false) {
         if (cancelled || abort.signal.aborted) throw new Error('cancelled');
+        if (Date.now() >= escapeAt) {
+          // navigator.onLine has stayed false for the bounded wait even after
+          // any focus/online nudges. Let one attempt through and
+          // let the retry/backoff loop be the actual connectivity arbiter —
+          // it handles transient network errors the same way regardless.
+          log('warn', `navigator.onLine stuck false after ${MAX_STUCK_OFFLINE_MS / 1000}s — attempting ${it.key} anyway`);
+          break;
+        }
         log('warn', `waiting for network to retry ${it.key}`);
         await waitForOnline(abort.signal);
       }

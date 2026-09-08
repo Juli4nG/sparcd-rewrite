@@ -496,6 +496,44 @@ describe('upload runs continue past per-file blob failures', () => {
     }
   });
 
+  it('proceeds after the bounded wait even when focus events interrupt every poll', async () => {
+    // Regression for #70. VPNs and some adapters can leave navigator.onLine
+    // permanently false even while packets flow normally. Before this fix,
+    // ensureOnline looped forever — focus reset the poll counter and restarted
+    // its timer. The elapsed-time deadline must expire independently of those
+    // events and let one attempt through.
+    // Here the mock succeeds, so the run completes — proving the bail-out
+    // unblocks the upload rather than hanging it forever.
+    vi.useFakeTimers();
+    const fakeWindow = new EventTarget();
+    vi.stubGlobal('window', fakeWindow);
+    vi.stubGlobal('navigator', { onLine: false }); // stuck false, never changes
+    try {
+      const session = makeSession(['pending']);
+      mocks.client = makeClient(session.files);
+      let last: UploadSnapshot | null = null;
+      const run = resumeUpload(
+        { config: CONFIG, session, attached: attachedFor(session.files), concurrency: manual(1) },
+        (snap) => { last = snap; },
+      );
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+      // Interrupt every poll before it can fire. At the 90-second deadline a
+      // final focus event wakes the loop; it must proceed rather than reset.
+      for (let elapsed = 10_000; elapsed <= 90_000; elapsed += 10_000) {
+        await vi.advanceTimersByTimeAsync(10_000);
+        fakeWindow.dispatchEvent(new Event('focus'));
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+      }
+      expect(mocks.client.writeImmutableStream).toHaveBeenCalledTimes(1);
+      await vi.runAllTimersAsync();
+      const snap = await collect(run, () => last);
+      expect(snap.phase).toBe('done');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('publishes metadata after a clean sweep', async () => {
     const session = makeSession(Array.from({ length: 2 }, () => 'pending'));
     mocks.client = makeClient(session.files);
