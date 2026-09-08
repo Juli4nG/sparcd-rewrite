@@ -157,7 +157,7 @@ Then('the admin setup guidance note is not visible', async ({ app }) => {
 });
 
 Then('the admin setup guidance note is shown with the collection ID', async ({ app }) => {
-  const note = app.page.getByText(/Upload failed/);
+  const note = app.page.getByText(/Upload failed.*administrator/);
   await expect(note).toBeVisible();
   await expect(note).toContainText('CORS policy');
   await expect(note).toContainText('PUT, HEAD');
